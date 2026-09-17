@@ -18,13 +18,14 @@ class STSModel(nn.Module):
         self,
         base_model: str,
         initialize_new: bool = False,
+        lora: bool = False,
         lora_config: Optional[Dict[str, Any]] = None,
     ) -> None:
         super().__init__()
 
         self.base_model_name: str = base_model
         self.initialize_new: bool = initialize_new
-        self.use_lora: bool = (lora_config is not None)
+        self.use_lora: bool = lora
         self.lora_config: Optional[LoraConfig] = LoraConfig(**lora_config) if lora_config else None
 
         self._base_model: PreTrainedModel
