@@ -22,6 +22,8 @@ class Trainer:
         self.data_config: DataConfig = data_config
         self.model_config: ModelConfig = model_config
 
+        # TODO: Check if there is anything to resume from. If so handle it here
+
         self.model: STSModel = STSModel(
             base_model=model_config.base_model,
             initialize_new=model_config.initialize_new,
@@ -68,10 +70,18 @@ class Trainer:
         self.lr_scheduler: Optional[optim.lr_scheduler.LRScheduler] = None
         match train_config.lr_scheduler:
             case "linear_warmup_cos_decay":
+                import math
+                total_steps: int = math.ceil(
+                    self.train_dataset.__len__() / train_config.batch_size
+                ) * train_config.num_epochs
+                warmup_steps: int = int(total_steps * train_config.warmup_percentage)
                 self.lr_scheduler = LinearWarmupCosineDecay(
                     self.optimizer,
                     start_factor=train_config.lr_begin_factor,
                     end_factor=train_config.lr_end_factor,
+                    warmup_steps=warmup_steps,
+                    total_steps=total_steps,
+                    last_epoch=-1,
                 )
             case "none":
                 pass

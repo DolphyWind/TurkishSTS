@@ -11,6 +11,10 @@ class TrainConfig:
         default=32,
         metadata={"help": "Batch size."},
     )
+    num_epochs: int = field(
+        default=20,
+        metadata={"help": "Number of epochs."}
+    )
     lr_peak: float = field(
         default=1e-5,
         metadata={"help": "Peak learning rate value. Default of AdamW if learning rate scheduler is disabled."}
@@ -30,6 +34,10 @@ class TrainConfig:
     lr_scheduler: Literal["linear_warmup_cos_decay", "none"] = field(
         default="linear_warmup_cos_decay",
         metadata={"help": "Learning rate scheduler to use"}
+    )
+    warmup_percentage: float = field(
+        default=0.1,
+        metadata={"help": "Percentage of training steps for warming the learning rate up."}
     )
 
 
