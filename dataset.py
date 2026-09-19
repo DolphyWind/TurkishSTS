@@ -5,9 +5,6 @@ from datasets import Dataset as HFDataset
 from torch.utils.data import Dataset
 
 
-BASE_PATH: Path = Path("/run/media/yunus/HDD_5TB/data/NLP/vngrs-web-corpus-sentences/")
-
-
 def load_and_merge(
     files: List[Path],
 ) -> HFDataset:
@@ -36,25 +33,16 @@ class SentenceDataset(Dataset):
     def __len__(self) -> int:
         return self.hf_dataset.__len__()
 
-    def __getitem__(self, index: int) -> Tuple[str, str]:
-        sentence: str = self.hf_dataset[index]["sentence"]
+    def __getitem__(self, index: int) -> Tuple[Dict[str, str], Dict[str, str]]:
+        elem: Dict[str, str] = self.hf_dataset[index]
         # I'll add separate data augmentations later
-        return sentence, sentence
+        return elem, elem
 
 
-def simple_collate_fn(data: List[Tuple[str, str]]) -> Tuple[List[str], List[str]]:
+def simple_collate_fn(data: List[Tuple[Dict[str, str], Dict[str, str]]]) -> Tuple[List[str], List[str]]:
     anchors: List[str] = []
     positives: List[str] = []
     for anchor, positive in data:
-        anchors.append(anchor)
-        positives.append(positive)
+        anchors.append(anchor["sentence"])
+        positives.append(positive["sentence"])
     return anchors, positives
-
-
-def main():
-    dataset = load_and_merge(list(BASE_PATH.glob("*.parquet")))
-    print(dataset[0:10])
-
-
-if __name__ == '__main__':
-    main()
