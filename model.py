@@ -48,17 +48,15 @@ class STSModel(nn.Module):
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
         token_type_ids: torch.Tensor,
-    ):
-        return self.base(
+    ) -> torch.Tensor:
+        out = self.base(
             input_ids=input_ids,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
         )
+        return self._mean_pooling(out, attention_mask)
 
-
-def main():
-    pass
-
-
-if __name__ == '__main__':
-    main()
+    def _mean_pooling(self, out, attn_mask: torch.Tensor) -> torch.Tensor:
+        last_hidden_state: torch.Tensor = out.last_hidden_state
+        mask = attn_mask.unsqueeze(-1).to(last_hidden_state.dtype)
+        return (last_hidden_state * mask).sum(dim=1) / mask.sum(dim=1).clamp_min(1e-9)

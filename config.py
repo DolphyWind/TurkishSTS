@@ -1,17 +1,58 @@
 from dataclasses import dataclass, field
-from typing import List, Tuple
+from pathlib import Path
+from typing import List, Literal, Tuple
 
 from transformers import HFArgumentParser
 
 
 @dataclass
 class TrainConfig:
-    pass
+    batch_size: int = field(
+        default=32,
+        metadata={"help": "Batch size."},
+    )
+    lr_peak: float = field(
+        default=1e-5,
+        metadata={"help": "Peak learning rate value. Default of AdamW if learning rate scheduler is disabled."}
+    )
+    lr_begin_factor: float = field(
+        default=0.1,
+        metadata={"help": "Linear warmup cosine decay begin factor"},
+    )
+    lr_end_factor: float = field(
+        default=0,
+        metadata={"help": "Linear warmup cosine decay end factor."}
+    )
+    weight_decay: float = field(
+        default=1e-3,
+        metadata={"help": "Weight decay parameter of AdamW."},
+    )
+    lr_scheduler: Literal["linear_warmup_cos_decay", "none"] = field(
+        default="linear_warmup_cos_decay",
+        metadata={"help": "Learning rate scheduler to use"}
+    )
 
 
 @dataclass
 class DataConfig:
-    pass
+    pq_files: List[str] = field(
+        default_factory=list,
+        metadata={"help": "Paths to parquet files."},
+    )
+    val_pq_files: List[str] = field(
+        default_factory=list,
+        metadata={"help": "Parquet files for validation. Validation is optional but highly encouraged."},
+    )
+    use_augmentations: bool = field(
+        default=False,
+        metadata={"help": "Use additional data augmentations."},
+    )
+
+    def __post_init__(self) -> None:
+        if not self.pq_files:
+            raise RuntimeError("Need at least one parquet file in order to train")
+        self.pq_files = [Path(p) for p in self.pq_files]  # type: ignore[assignment]
+        self.val_pq_files = [Path(p) for p in self.val_pq_files]  # type: ignore[assignment]
 
 
 @dataclass
@@ -34,8 +75,12 @@ class ModelConfig:
         metadata={"help": "LoRA alpha value."},
     )
     lora_target_modules: List[str] = field(
-        default_factory=list,
+        default_factory=lambda: ["query", "key", "value", "dense"],
         metadata={"help": "LoRA target modules."},
+    )
+    lora_modules_to_save: List[str] = field(
+        default_factory=lambda: ["LayerNorm"],
+        metadata={"help": "LoRA modules to save argument."}
     )
     lora_dropout: float = field(
         default=0.05,
