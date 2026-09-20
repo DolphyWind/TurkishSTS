@@ -58,6 +58,30 @@ def off_dropout_infonce_loss(
     return F.cross_entropy(logits, targets)
 
 
+def _standardize(z: torch.Tensor) -> torch.Tensor:
+    mean = z.mean(dim=0, keepdim=True)
+    std = z.std(dim=0, unbiased=True, keepdim=True)
+    return (z - mean) / (std + 1e-6)
+
+
+def dcl_loss(
+    *,
+    anchors: torch.Tensor,
+    positives: torch.Tensor,
+    temperature: float = 5.0,
+    **kwargs,
+) -> torch.Tensor:
+    a = _standardize(anchors)
+    p = _standardize(positives)
+
+    logits: torch.Tensor = (a.T @ p).float() / temperature
+    targets: torch.Tensor = torch.arange(
+        logits.size(0),
+        device=logits.device,
+    )
+    return F.cross_entropy(logits, targets)
+
+
 @contextmanager
 def dropout_disabled(model: nn.Module):
     mods = [mod for mod in model.modules() if isinstance(mod, nn.Dropout)]

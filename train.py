@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 from config import DataConfig, ModelConfig, TrainConfig, parse_args
 from dataset import SentenceDataset, load_and_merge, simple_collate_fn
-from loss import dropout_disabled, off_dropout_infonce_loss
+from loss import dcl_loss, dropout_disabled, off_dropout_infonce_loss
 from lr_scheduler import LinearWarmupCosineDecay
 from model import STSModel
 
@@ -110,14 +110,16 @@ class Trainer:
 
     def train(self):
         for epoch in range(1, self.num_epochs + 1):
-            train_loop: tqdm = tqdm(self.train_loader)
-            self._train_one_step()
+            self._train_one_step(epoch)
 
-    def _train_one_step(self) -> float:
+    def _train_one_step(self, epoch_num: int) -> float:
         loop: tqdm = tqdm(self.train_loader)
+        loop.set_description_str(f"Epoch {epoch_num}")
         total_loss: float = 0.0
+        avg_loss: float = 0.0
         num_elems: int = len(loop)
-        for anchors, in loop:
+
+        for i, (anchors,) in enumerate(loop, start=1):
             anchors_pt = self.tokenizer(
                 anchors,
                 return_tensors="pt",
@@ -127,6 +129,7 @@ class Trainer:
 
             anchors_pt = anchors_pt.to(self.device)
 
+            self.optimizer.zero_grad()
             z1: torch.Tensor = self.model(anchors_pt)
             z2: torch.Tensor = self.model(anchors_pt)
             with dropout_disabled(self.model):
@@ -139,6 +142,23 @@ class Trainer:
                 temperature=self.train_config.infonce_temp,
                 m=self.train_config.tradeoff_ratio,
             )
+            dcl: torch.Tensor = dcl_loss(
+                anchors=z1,
+                positives=z2,
+                temperature=self.train_config.dce_temp,
+            )
+
+            loss = infonce_loss + self.train_config.dce_coefficient * dcl
+            loss.backward()
+            self.optimizer.step()
+            if self.lr_scheduler:
+                self.lr_scheduler.step()
+
+            loss_float: float = loss.item()
+            total_loss += loss_float
+            avg_loss = total_loss / i
+            lr: float = self.optimizer.param_groups[0]["lr"]
+            loop.set_postfix(loss=loss_float, avg_loss=avg_loss, lr=lr)
 
         return total_loss / num_elems
 
