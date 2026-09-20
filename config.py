@@ -13,11 +13,11 @@ class TrainConfig:
     )
     num_epochs: int = field(
         default=20,
-        metadata={"help": "Number of epochs."}
+        metadata={"help": "Number of epochs."},
     )
     lr_peak: float = field(
         default=1e-5,
-        metadata={"help": "Peak learning rate value. Default of AdamW if learning rate scheduler is disabled."}
+        metadata={"help": "Peak learning rate value. Default of AdamW if learning rate scheduler is disabled."},
     )
     lr_begin_factor: float = field(
         default=0.1,
@@ -25,7 +25,7 @@ class TrainConfig:
     )
     lr_end_factor: float = field(
         default=0,
-        metadata={"help": "Linear warmup cosine decay end factor."}
+        metadata={"help": "Linear warmup cosine decay end factor."},
     )
     weight_decay: float = field(
         default=1e-3,
@@ -33,11 +33,31 @@ class TrainConfig:
     )
     lr_scheduler: Literal["linear_warmup_cos_decay", "none"] = field(
         default="linear_warmup_cos_decay",
-        metadata={"help": "Learning rate scheduler to use"}
+        metadata={"help": "Learning rate scheduler to use"},
     )
     warmup_percentage: float = field(
         default=0.1,
-        metadata={"help": "Percentage of training steps for warming the learning rate up."}
+        metadata={"help": "Percentage of training steps for warming the learning rate up."},
+    )
+    mixed_precision: Literal["no", "fp16", "bf16"] = field(
+        default="bf16",
+        metadata={"help": "Mixed precision setting."},
+    )
+    infonce_temp: float = field(
+        default=5e-2,
+        metadata={"help": "InfoNCE Temperature."},
+    )
+    tradeoff_ratio: float = field(
+        default=0.9,
+        metadata={"help": "Trade-off ratio of Dimension-Wise Contrastive Learning. Denoted with `m` in the paper."},
+    )
+    dce_temp: float = field(
+        default=5.0,
+        metadata={"help": "Temperature value of Dimension-Wise Contrastive Learning."},
+    )
+    dce_coefficient: float = field(
+        default=0.1,
+        metadata={"help": "Loss coefficient of Dimension-Wise Contrastive Learning."},
     )
 
 
@@ -72,7 +92,7 @@ class ModelConfig:
     )
     lora: bool = field(
         default=False,
-        metadata={"help": "Use LoRA for fine-tuning."}
+        metadata={"help": "Use LoRA for fine-tuning."},
     )
     lora_r: int = field(
         default=8,
@@ -88,7 +108,7 @@ class ModelConfig:
     )
     lora_modules_to_save: List[str] = field(
         default_factory=lambda: ["LayerNorm"],
-        metadata={"help": "LoRA modules to save argument."}
+        metadata={"help": "LoRA modules to save argument."},
     )
     lora_dropout: float = field(
         default=0.05,

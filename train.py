@@ -1,12 +1,17 @@
 from typing import Optional
 
+from accelerate import Accelerator
 from datasets import Dataset as HFDataset
 from peft import TaskType
+from transformers import PreTrainedTokenizerBase
+import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from config import DataConfig, ModelConfig, TrainConfig, parse_args
 from dataset import SentenceDataset, load_and_merge, simple_collate_fn
+from loss import dropout_disabled, off_dropout_infonce_loss
 from lr_scheduler import LinearWarmupCosineDecay
 from model import STSModel
 
@@ -86,8 +91,56 @@ class Trainer:
             case "none":
                 pass
 
+        self._validation: bool = self.val_loader is not None
+        self.num_epochs: int = train_config.num_epochs
+        self.tokenizer: PreTrainedTokenizerBase = self.model.tokenizer
+        self.accelerator = Accelerator(
+            mixed_precision=train_config.mixed_precision,
+        )
+        self.device: torch.device = self.accelerator.device
+
+        if self._validation:
+            self.model, self.optimizer, self.train_loader, self.val_loader, self.lr_scheduler = self.accelerator.prepare(
+                self.model, self.optimizer, self.train_loader, self.val_loader, self.lr_scheduler
+            )
+        else:
+            self.model, self.optimizer, self.train_loader, self.lr_scheduler = self.accelerator.prepare(
+                self.model, self.optimizer, self.train_loader, self.lr_scheduler
+            )
+
     def train(self):
-        pass
+        for epoch in range(1, self.num_epochs + 1):
+            train_loop: tqdm = tqdm(self.train_loader)
+            self._train_one_step()
+
+    def _train_one_step(self) -> float:
+        loop: tqdm = tqdm(self.train_loader)
+        total_loss: float = 0.0
+        num_elems: int = len(loop)
+        for anchors, in loop:
+            anchors_pt = self.tokenizer(
+                anchors,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+            )
+
+            anchors_pt = anchors_pt.to(self.device)
+
+            z1: torch.Tensor = self.model(anchors_pt)
+            z2: torch.Tensor = self.model(anchors_pt)
+            with dropout_disabled(self.model):
+                z_off: torch.Tensor = self.model(anchors_pt)
+
+            infonce_loss: torch.Tensor = off_dropout_infonce_loss(
+                anchors=z1,
+                positives=z2,
+                off_dropout=z_off,
+                temperature=self.train_config.infonce_temp,
+                m=self.train_config.tradeoff_ratio,
+            )
+
+        return total_loss / num_elems
 
 
 def main():

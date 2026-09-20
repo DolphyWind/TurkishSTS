@@ -33,16 +33,13 @@ class SentenceDataset(Dataset):
     def __len__(self) -> int:
         return self.hf_dataset.__len__()
 
-    def __getitem__(self, index: int) -> Tuple[Dict[str, str], Dict[str, str]]:
+    def __getitem__(self, index: int) -> Dict[str, str]:
         elem: Dict[str, str] = self.hf_dataset[index]
-        # I'll add separate data augmentations later
-        return elem, elem
+        return elem
 
 
-def simple_collate_fn(data: List[Tuple[Dict[str, str], Dict[str, str]]]) -> Tuple[List[str], List[str]]:
-    anchors: List[str] = []
-    positives: List[str] = []
-    for anchor, positive in data:
-        anchors.append(anchor["sentence"])
-        positives.append(positive["sentence"])
-    return anchors, positives
+def simple_collate_fn(data: List[Dict[str, str]]) -> Tuple[List[str]]:
+    batch: List[str] = []
+    for anchor in data:
+        batch.append(anchor["sentence"])
+    return (batch,)
