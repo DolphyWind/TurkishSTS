@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Literal, Tuple
 
-from transformers import HFArgumentParser
+from transformers import HfArgumentParser
 
 
 @dataclass
@@ -51,11 +51,11 @@ class TrainConfig:
         default=0.9,
         metadata={"help": "Trade-off ratio of Dimension-Wise Contrastive Learning. Denoted with `m` in the paper."},
     )
-    dce_temp: float = field(
+    dcl_temp: float = field(
         default=5.0,
         metadata={"help": "Temperature value of Dimension-Wise Contrastive Learning."},
     )
-    dce_coefficient: float = field(
+    dcl_coefficient: float = field(
         default=0.1,
         metadata={"help": "Loss coefficient of Dimension-Wise Contrastive Learning."},
     )
@@ -117,5 +117,5 @@ class ModelConfig:
 
 
 def parse_args() -> Tuple[TrainConfig, DataConfig, ModelConfig]:
-    parser: HFArgumentParser = HFArgumentParser((TrainConfig, DataConfig, ModelConfig))
-    return parser.parse_into_data_classes()
+    parser: HfArgumentParser = HfArgumentParser((TrainConfig, DataConfig, ModelConfig))
+    return parser.parse_args_into_dataclasses()

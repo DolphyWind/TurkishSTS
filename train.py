@@ -130,10 +130,10 @@ class Trainer:
             anchors_pt = anchors_pt.to(self.device)
 
             self.optimizer.zero_grad()
-            z1: torch.Tensor = self.model(anchors_pt)
-            z2: torch.Tensor = self.model(anchors_pt)
+            z1: torch.Tensor = self.model(**anchors_pt)
+            z2: torch.Tensor = self.model(**anchors_pt)
             with dropout_disabled(self.model):
-                z_off: torch.Tensor = self.model(anchors_pt)
+                z_off: torch.Tensor = self.model(**anchors_pt)
 
             infonce_loss: torch.Tensor = off_dropout_infonce_loss(
                 anchors=z1,
@@ -145,10 +145,10 @@ class Trainer:
             dcl: torch.Tensor = dcl_loss(
                 anchors=z1,
                 positives=z2,
-                temperature=self.train_config.dce_temp,
+                temperature=self.train_config.dcl_temp,
             )
 
-            loss = infonce_loss + self.train_config.dce_coefficient * dcl
+            loss = infonce_loss + self.train_config.dcl_coefficient * dcl
             loss.backward()
             self.optimizer.step()
             if self.lr_scheduler:
@@ -158,7 +158,13 @@ class Trainer:
             total_loss += loss_float
             avg_loss = total_loss / i
             lr: float = self.optimizer.param_groups[0]["lr"]
-            loop.set_postfix(loss=loss_float, avg_loss=avg_loss, lr=lr)
+            loop.set_postfix(
+                loss=loss_float,
+                infonce=infonce_loss.item(),
+                dcl=dcl.item() * self.train_config.dcl_coefficient,
+                avg_loss=avg_loss,
+                lr=lr,
+            )
 
         return total_loss / num_elems
 
