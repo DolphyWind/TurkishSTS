@@ -59,6 +59,14 @@ class TrainConfig:
         default=0.1,
         metadata={"help": "Loss coefficient of Dimension-Wise Contrastive Learning."},
     )
+    noise_mean: float = field(
+        default=0.0,
+        metadata={"help": "Gaussian noise mean for the positive pairs."},
+    )
+    noise_var: float = field(
+        default=0.1,
+        metadata={"help": "Gaussian noise variance for the positive pairs."},
+    )
 
 
 @dataclass

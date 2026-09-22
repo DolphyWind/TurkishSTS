@@ -11,9 +11,10 @@ from tqdm import tqdm
 
 from config import DataConfig, ModelConfig, TrainConfig, parse_args
 from dataset import SentenceDataset, load_and_merge, simple_collate_fn
-from loss import dcl_loss, dropout_disabled, off_dropout_infonce_loss
+from loss import dcl_loss, off_dropout_infonce_loss
 from lr_scheduler import LinearWarmupCosineDecay
 from model import STSModel
+from util import dropout_disabled, randn_like
 
 
 class Trainer:
@@ -110,11 +111,15 @@ class Trainer:
 
     def train(self):
         for epoch in range(1, self.num_epochs + 1):
-            self._train_one_step(epoch)
+            self._train_one_step(epoch, self.num_epochs)
 
-    def _train_one_step(self, epoch_num: int) -> float:
+    def _train_one_step(
+        self,
+        epoch_num: int,
+        num_epochs: int,
+    ) -> float:
         loop: tqdm = tqdm(self.train_loader)
-        loop.set_description_str(f"Epoch {epoch_num}")
+        loop.set_description_str(f"Epoch [{epoch_num}/{num_epochs}]")
         total_loss: float = 0.0
         avg_loss: float = 0.0
         num_elems: int = len(loop)
@@ -132,6 +137,17 @@ class Trainer:
             self.optimizer.zero_grad()
             z1: torch.Tensor = self.model(**anchors_pt)
             z2: torch.Tensor = self.model(**anchors_pt)
+
+            z1 = z1 + randn_like(
+                z1,
+                mean=self.train_config.noise_mean,
+                var=self.train_config.noise_var,
+            )
+            z2 = z2 + randn_like(
+                z2,
+                mean=self.train_config.noise_mean,
+                var=self.train_config.noise_var,
+            )
             with dropout_disabled(self.model):
                 z_off: torch.Tensor = self.model(**anchors_pt)
 

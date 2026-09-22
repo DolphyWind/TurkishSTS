@@ -1,8 +1,6 @@
-from contextlib import contextmanager
 import math
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
 
@@ -80,16 +78,3 @@ def dcl_loss(
         device=logits.device,
     )
     return F.cross_entropy(logits, targets)
-
-
-@contextmanager
-def dropout_disabled(model: nn.Module):
-    mods = [mod for mod in model.modules() if isinstance(mod, nn.Dropout)]
-    was_training = [mod.training for mod in mods]
-    for mod in mods:
-        mod.eval()
-    try:
-        yield
-    finally:
-        for mod, flag in zip(mods, was_training):
-            mod.train(flag)
