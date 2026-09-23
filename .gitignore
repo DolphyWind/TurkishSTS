@@ -12,3 +12,4 @@ wheels/
 # Custom
 output/
 train.sh
+data/

@@ -1,4 +1,5 @@
-from typing import Optional
+from contextlib import nullcontext
+from typing import Literal, Optional
 
 from accelerate import Accelerator
 from datasets import Dataset as HFDataset
@@ -112,109 +113,52 @@ class Trainer:
 
     def train(self):
         for epoch in range(1, self.num_epochs + 1):
-            current_loss: float = self._train_one_step(epoch)
-            current_loss = self._validate_one_step(epoch) or current_loss
+            current_loss: float = self._one_step(epoch, 'train') or float('inf')
+            current_loss = self._one_step(epoch, 'val') or current_loss
 
-    def _train_one_step(
+    def _one_step(
         self,
         epoch_num: int,
-    ) -> float:
-        loop: tqdm = tqdm(self.train_loader)
-        loop.set_description_str(f"Epoch [{epoch_num}/{self.num_epochs}]")
-        total_loss: float = 0.0
-        avg_loss: float = 0.0
-        num_elems: int = len(loop)
-
-        for i, (anchors,) in enumerate(loop, start=1):
-            anchors_pt = self.tokenizer(
-                anchors,
-                return_tensors="pt",
-                padding=True,
-                truncation=True,
-            )
-
-            anchors_pt = anchors_pt.to(self.device)
-
-            self.optimizer.zero_grad()
-            z1: torch.Tensor = self.model(**anchors_pt)
-            z2: torch.Tensor = self.model(**anchors_pt)
-
-            z1 = z1 + randn_like(
-                z1,
-                mean=self.train_config.noise_mean,
-                var=self.train_config.noise_var,
-            )
-            z2 = z2 + randn_like(
-                z2,
-                mean=self.train_config.noise_mean,
-                var=self.train_config.noise_var,
-            )
-            with dropout_set_to(self.model, False):
-                z_off: torch.Tensor = self.model(**anchors_pt)
-
-            infonce_loss: torch.Tensor = off_dropout_infonce_loss(
-                anchors=z1,
-                positives=z2,
-                off_dropout=z_off,
-                temperature=self.train_config.infonce_temp,
-                m=self.train_config.tradeoff_ratio,
-            )
-            dcl: torch.Tensor = dcl_loss(
-                anchors=z1,
-                positives=z2,
-                temperature=self.train_config.dcl_temp,
-            )
-
-            loss = infonce_loss + self.train_config.dcl_coefficient * dcl
-            loss.backward()
-            self.optimizer.step()
-            if self.lr_scheduler:
-                self.lr_scheduler.step()
-
-            loss_float: float = loss.item()
-            total_loss += loss_float
-            avg_loss = total_loss / i
-            lr: float = self.optimizer.param_groups[0]["lr"]
-            loop.set_postfix(
-                loss=loss_float,
-                infonce=infonce_loss.item(),
-                dcl=dcl.item() * self.train_config.dcl_coefficient,
-                avg_loss=avg_loss,
-                lr=lr,
-            )
-
-        return total_loss / num_elems
-
-    @torch.no_grad()
-    def _validate_one_step(
-        self,
-        epoch_num: int,
+        mode: Literal['train', 'val'],
     ) -> Optional[float]:
-        # TODO: Merge _train_one_step and _validate_one_step into one function.
-        if not self._validation:
+        if mode == 'val' and not self._validation:
             return None
+        self.model.train(mode == 'train')
 
-        loop: tqdm = tqdm(self.val_loader)
-        loop.set_description_str(f"Validation [{epoch_num}/{self.num_epochs}]")
+        loop: tqdm
+        if mode == 'train':
+            loop = tqdm(self.train_loader)
+        elif mode == 'val':
+            loop = tqdm(self.val_loader)
+
+        desc: str = "Epoch" if mode == 'train' else "Validation"
+        loop.set_description_str(f"{desc} [{epoch_num}/{self.num_epochs}]")
         total_loss: float = 0.0
         avg_loss: float = 0.0
         num_elems: int = len(loop)
 
-        for i, (anchors,) in enumerate(loop, start=1):
-            anchors_pt = self.tokenizer(
-                anchors,
-                return_tensors="pt",
-                padding=True,
-                truncation=True,
-            )
+        ctx = nullcontext() if mode == 'train' else torch.no_grad()
+        with ctx:
+            for i, (anchors,) in enumerate(loop, start=1):
+                anchors_pt = self.tokenizer(
+                    anchors,
+                    return_tensors="pt",
+                    padding=True,
+                    truncation=True,
+                )
 
-            anchors_pt = anchors_pt.to(self.device)
+                anchors_pt = anchors_pt.to(self.device)
 
-            self.optimizer.zero_grad()
-            z1: torch.Tensor = self.model(**anchors_pt)
-            z2: torch.Tensor = self.model(**anchors_pt)
+                if mode == 'train':
+                    self.optimizer.zero_grad()
 
-            with dropout_set_to(self.model, True):
+                with dropout_set_to(self.model, True):
+                    z1: torch.Tensor = self.model(**anchors_pt)
+                    z2: torch.Tensor = self.model(**anchors_pt)
+
+                with dropout_set_to(self.model, False):
+                    z_off: torch.Tensor = self.model(**anchors_pt)
+
                 z1 = z1 + randn_like(
                     z1,
                     mean=self.train_config.noise_mean,
@@ -226,33 +170,37 @@ class Trainer:
                     var=self.train_config.noise_var,
                 )
 
-            z_off: torch.Tensor = self.model(**anchors_pt)
+                infonce_loss: torch.Tensor = off_dropout_infonce_loss(
+                    anchors=z1,
+                    positives=z2,
+                    off_dropout=z_off,
+                    temperature=self.train_config.infonce_temp,
+                    m=self.train_config.tradeoff_ratio,
+                )
+                dcl: torch.Tensor = dcl_loss(
+                    anchors=z1,
+                    positives=z2,
+                    temperature=self.train_config.dcl_temp,
+                )
+                loss = infonce_loss + self.train_config.dcl_coefficient * dcl
 
-            infonce_loss: torch.Tensor = off_dropout_infonce_loss(
-                anchors=z1,
-                positives=z2,
-                off_dropout=z_off,
-                temperature=self.train_config.infonce_temp,
-                m=self.train_config.tradeoff_ratio,
-            )
-            dcl: torch.Tensor = dcl_loss(
-                anchors=z1,
-                positives=z2,
-                temperature=self.train_config.dcl_temp,
-            )
-            loss = infonce_loss + self.train_config.dcl_coefficient * dcl
+                if mode == 'train':
+                    loss.backward()
+                    self.optimizer.step()
+                    if self.lr_scheduler:
+                        self.lr_scheduler.step()
 
-            loss_float: float = loss.item()
-            total_loss += loss_float
-            avg_loss = total_loss / i
-            lr: float = self.optimizer.param_groups[0]["lr"]
-            loop.set_postfix(
-                loss=loss_float,
-                infonce=infonce_loss.item(),
-                dcl=dcl.item() * self.train_config.dcl_coefficient,
-                avg_loss=avg_loss,
-                lr=lr,
-            )
+                loss_float: float = loss.item()
+                total_loss += loss_float
+                avg_loss = total_loss / i
+                lr: float = self.optimizer.param_groups[0]["lr"]
+                loop.set_postfix(
+                    loss=loss_float,
+                    infonce=infonce_loss.item(),
+                    dcl=dcl.item() * self.train_config.dcl_coefficient,
+                    avg_loss=avg_loss,
+                    lr=lr,
+                )
 
         return total_loss / num_elems
 
