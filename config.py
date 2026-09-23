@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Literal, Tuple
+from typing import List, Literal, Optional, Tuple
 
 from transformers import HfArgumentParser
 
@@ -66,6 +66,14 @@ class TrainConfig:
     noise_var: float = field(
         default=0.1,
         metadata={"help": "Gaussian noise variance for the positive pairs."},
+    )
+    seed: Optional[int] = field(
+        default=None,
+        metadata={"help": "Seed value for reproducability."},
+    )
+    deterministic: bool = field(
+        default=False,
+        metadata={"help": "Use deterministic CUDA operations."},
     )
 
 

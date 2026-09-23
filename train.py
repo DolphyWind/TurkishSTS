@@ -1,8 +1,11 @@
 from contextlib import nullcontext
+import random
 from typing import Literal, Optional
 
 from accelerate import Accelerator
+from accelerate.utils import DataLoaderConfiguration, set_seed
 from datasets import Dataset as HFDataset
+import numpy as np
 from peft import TaskType
 from transformers import PreTrainedTokenizerBase
 import torch
@@ -29,7 +32,20 @@ class Trainer:
         self.data_config: DataConfig = data_config
         self.model_config: ModelConfig = model_config
 
+        self.accelerator = Accelerator(
+            mixed_precision=train_config.mixed_precision,
+            dataloader_config=DataLoaderConfiguration(
+                use_seedable_sampler=True,
+                use_stateful_dataloader=True,
+            ),
+        )
+        self.device: torch.device = self.accelerator.device
+
         # TODO: Check if there is anything to resume from. If so handle it here
+        self.seed: Optional[int] = self.train_config.seed
+        self.deterministic: bool = self.train_config.deterministic
+
+        self._seed()
 
         self.model: STSModel = STSModel(
             base_model=model_config.base_model,
@@ -97,10 +113,6 @@ class Trainer:
         self._validation: bool = self.val_loader is not None
         self.num_epochs: int = train_config.num_epochs
         self.tokenizer: PreTrainedTokenizerBase = self.model.tokenizer
-        self.accelerator = Accelerator(
-            mixed_precision=train_config.mixed_precision,
-        )
-        self.device: torch.device = self.accelerator.device
 
         if self._validation:
             self.model, self.optimizer, self.train_loader, self.val_loader, self.lr_scheduler = self.accelerator.prepare(
@@ -116,6 +128,17 @@ class Trainer:
             current_loss: float = self._one_step(epoch, 'train') or float('inf')
             current_loss = self._one_step(epoch, 'val') or current_loss
 
+    def _seed(self):
+        if self.seed is None:
+            return
+
+        set_seed(
+            self.seed,
+            deterministic=self.deterministic,
+        )
+        if self.deterministic:
+            torch.backends.cudnn.benchmark = False
+
     def _one_step(
         self,
         epoch_num: int,
@@ -127,8 +150,10 @@ class Trainer:
 
         loop: tqdm
         if mode == 'train':
+            self.train_loader.set_epoch(epoch_num)  # pyright: ignore
             loop = tqdm(self.train_loader)
         elif mode == 'val':
+            self.val_loader.set_epoch(epoch_num)  # pyright: ignore
             loop = tqdm(self.val_loader)
 
         desc: str = "Epoch" if mode == 'train' else "Validation"
