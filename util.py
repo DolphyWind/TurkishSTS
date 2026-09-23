@@ -5,11 +5,14 @@ import torch.nn as nn
 
 
 @contextmanager
-def dropout_disabled(model: nn.Module):
+def dropout_set_to(
+    model: nn.Module,
+    dropout_state: bool,
+):
     mods = [mod for mod in model.modules() if isinstance(mod, nn.Dropout)]
     was_training = [mod.training for mod in mods]
     for mod in mods:
-        mod.eval()
+        mod.train(dropout_state)
     try:
         yield
     finally:

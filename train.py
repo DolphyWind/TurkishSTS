@@ -14,7 +14,7 @@ from dataset import SentenceDataset, load_and_merge, simple_collate_fn
 from loss import dcl_loss, off_dropout_infonce_loss
 from lr_scheduler import LinearWarmupCosineDecay
 from model import STSModel
-from util import dropout_disabled, randn_like
+from util import dropout_set_to, randn_like
 
 
 class Trainer:
@@ -48,6 +48,7 @@ class Trainer:
         self.__val_hf_dataset: Optional[HFDataset] = load_and_merge(
             data_config.val_pq_files  # pyright: ignore
         ) if data_config.val_pq_files else None
+
         self.train_dataset: SentenceDataset = SentenceDataset(
             hf_dataset=self.__hf_dataset,
         )
@@ -111,15 +112,15 @@ class Trainer:
 
     def train(self):
         for epoch in range(1, self.num_epochs + 1):
-            self._train_one_step(epoch, self.num_epochs)
+            current_loss: float = self._train_one_step(epoch)
+            current_loss = self._validate_one_step(epoch) or current_loss
 
     def _train_one_step(
         self,
         epoch_num: int,
-        num_epochs: int,
     ) -> float:
         loop: tqdm = tqdm(self.train_loader)
-        loop.set_description_str(f"Epoch [{epoch_num}/{num_epochs}]")
+        loop.set_description_str(f"Epoch [{epoch_num}/{self.num_epochs}]")
         total_loss: float = 0.0
         avg_loss: float = 0.0
         num_elems: int = len(loop)
@@ -148,7 +149,7 @@ class Trainer:
                 mean=self.train_config.noise_mean,
                 var=self.train_config.noise_var,
             )
-            with dropout_disabled(self.model):
+            with dropout_set_to(self.model, False):
                 z_off: torch.Tensor = self.model(**anchors_pt)
 
             infonce_loss: torch.Tensor = off_dropout_infonce_loss(
@@ -169,6 +170,77 @@ class Trainer:
             self.optimizer.step()
             if self.lr_scheduler:
                 self.lr_scheduler.step()
+
+            loss_float: float = loss.item()
+            total_loss += loss_float
+            avg_loss = total_loss / i
+            lr: float = self.optimizer.param_groups[0]["lr"]
+            loop.set_postfix(
+                loss=loss_float,
+                infonce=infonce_loss.item(),
+                dcl=dcl.item() * self.train_config.dcl_coefficient,
+                avg_loss=avg_loss,
+                lr=lr,
+            )
+
+        return total_loss / num_elems
+
+    @torch.no_grad()
+    def _validate_one_step(
+        self,
+        epoch_num: int,
+    ) -> Optional[float]:
+        # TODO: Merge _train_one_step and _validate_one_step into one function.
+        if not self._validation:
+            return None
+
+        loop: tqdm = tqdm(self.val_loader)
+        loop.set_description_str(f"Validation [{epoch_num}/{self.num_epochs}]")
+        total_loss: float = 0.0
+        avg_loss: float = 0.0
+        num_elems: int = len(loop)
+
+        for i, (anchors,) in enumerate(loop, start=1):
+            anchors_pt = self.tokenizer(
+                anchors,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+            )
+
+            anchors_pt = anchors_pt.to(self.device)
+
+            self.optimizer.zero_grad()
+            z1: torch.Tensor = self.model(**anchors_pt)
+            z2: torch.Tensor = self.model(**anchors_pt)
+
+            with dropout_set_to(self.model, True):
+                z1 = z1 + randn_like(
+                    z1,
+                    mean=self.train_config.noise_mean,
+                    var=self.train_config.noise_var,
+                )
+                z2 = z2 + randn_like(
+                    z2,
+                    mean=self.train_config.noise_mean,
+                    var=self.train_config.noise_var,
+                )
+
+            z_off: torch.Tensor = self.model(**anchors_pt)
+
+            infonce_loss: torch.Tensor = off_dropout_infonce_loss(
+                anchors=z1,
+                positives=z2,
+                off_dropout=z_off,
+                temperature=self.train_config.infonce_temp,
+                m=self.train_config.tradeoff_ratio,
+            )
+            dcl: torch.Tensor = dcl_loss(
+                anchors=z1,
+                positives=z2,
+                temperature=self.train_config.dcl_temp,
+            )
+            loss = infonce_loss + self.train_config.dcl_coefficient * dcl
 
             loss_float: float = loss.item()
             total_loss += loss_float
