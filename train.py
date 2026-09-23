@@ -1,10 +1,11 @@
 from contextlib import nullcontext
 import random
-from typing import Literal, Optional
+from typing import List, Literal, Optional
 
 from accelerate import Accelerator
 from accelerate.utils import DataLoaderConfiguration, set_seed
 from datasets import Dataset as HFDataset
+import mlflow
 import numpy as np
 from peft import TaskType
 from transformers import PreTrainedTokenizerBase
@@ -13,7 +14,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from config import DataConfig, ModelConfig, TrainConfig, parse_args
+from config import DataConfig, ModelConfig, MonitoringConfig, TrainConfig, parse_args
 from dataset import SentenceDataset, load_and_merge, simple_collate_fn
 from loss import dcl_loss, off_dropout_infonce_loss
 from lr_scheduler import LinearWarmupCosineDecay
@@ -27,10 +28,12 @@ class Trainer:
         train_config: TrainConfig,
         data_config: DataConfig,
         model_config: ModelConfig,
+        monitoring_config: MonitoringConfig,
     ) -> None:
         self.train_config: TrainConfig = train_config
         self.data_config: DataConfig = data_config
         self.model_config: ModelConfig = model_config
+        self.monitoring_config: MonitoringConfig = monitoring_config
 
         self.accelerator = Accelerator(
             mixed_precision=train_config.mixed_precision,
@@ -124,9 +127,17 @@ class Trainer:
             )
 
     def train(self):
-        for epoch in range(1, self.num_epochs + 1):
-            current_loss: float = self._one_step(epoch, 'train') or float('inf')
-            current_loss = self._one_step(epoch, 'val') or current_loss
+        ctx = nullcontext()
+        if self.accelerator.is_main_process:
+            mlflow.set_experiment(self.monitoring_config.experiment_name)
+            ctx = mlflow.start_run(
+                run_name=self.monitoring_config.run_name,
+            )
+
+        with ctx:
+            for epoch in range(1, self.num_epochs + 1):
+                current_loss: float = self._one_step(epoch, 'train') or float('inf')
+                current_loss = self._one_step(epoch, 'val') or current_loss
 
     def _seed(self):
         if self.seed is None:
@@ -151,19 +162,18 @@ class Trainer:
         loop: tqdm
         if mode == 'train':
             self.train_loader.set_epoch(epoch_num)  # pyright: ignore
-            loop = tqdm(self.train_loader)
+            loop = tqdm(self.train_loader, disable=not self.accelerator.is_main_process)
         elif mode == 'val':
             self.val_loader.set_epoch(epoch_num)  # pyright: ignore
-            loop = tqdm(self.val_loader)
+            loop = tqdm(self.val_loader, disable=not self.accelerator.is_main_process)
 
         desc: str = "Epoch" if mode == 'train' else "Validation"
         loop.set_description_str(f"{desc} [{epoch_num}/{self.num_epochs}]")
         total_loss: float = 0.0
-        avg_loss: float = 0.0
-        num_elems: int = len(loop)
+        losses: List[float] = []
 
-        ctx = nullcontext() if mode == 'train' else torch.no_grad()
-        with ctx:
+        grad_ctx = nullcontext() if mode == 'train' else torch.no_grad()
+        with grad_ctx:
             for i, (anchors,) in enumerate(loop, start=1):
                 anchors_pt = self.tokenizer(
                     anchors,
@@ -210,7 +220,7 @@ class Trainer:
                 loss = infonce_loss + self.train_config.dcl_coefficient * dcl
 
                 if mode == 'train':
-                    loss.backward()
+                    self.accelerator.backward(loss)
                     self.optimizer.step()
                     if self.lr_scheduler:
                         self.lr_scheduler.step()
@@ -218,6 +228,8 @@ class Trainer:
                 loss_float: float = loss.item()
                 total_loss += loss_float
                 avg_loss = total_loss / i
+
+                losses.append(loss_float)
                 lr: float = self.optimizer.param_groups[0]["lr"]
                 loop.set_postfix(
                     loss=loss_float,
@@ -227,15 +239,23 @@ class Trainer:
                     lr=lr,
                 )
 
-        return total_loss / num_elems
+        losses_tensor: torch.Tensor = torch.tensor(
+            losses,
+            device=self.device
+        )
+        losses_gathered: torch.Tensor = self.accelerator.gather_for_metrics(losses_tensor)
+        avg_loss: float = losses_gathered.mean().item()
+
+        return avg_loss
 
 
 def main():
-    train_config, data_config, model_config = parse_args()
+    train_config, data_config, model_config, monitoring_config = parse_args()
     trainer = Trainer(
         train_config,
         data_config,
-        model_config
+        model_config,
+        monitoring_config,
     )
     trainer.train()
 

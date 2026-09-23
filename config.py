@@ -132,6 +132,21 @@ class ModelConfig:
     )
 
 
-def parse_args() -> Tuple[TrainConfig, DataConfig, ModelConfig]:
-    parser: HfArgumentParser = HfArgumentParser((TrainConfig, DataConfig, ModelConfig))
+@dataclass
+class MonitoringConfig:
+    experiment_name: str = field(
+        metadata={"help": "Name of the MLFlow experiment."},
+    )
+    run_name: str = field(
+        metadata={"help": "Name of the MLFlow run."}
+    )
+
+
+def parse_args() -> Tuple[TrainConfig, DataConfig, ModelConfig, MonitoringConfig]:
+    parser: HfArgumentParser = HfArgumentParser((
+        TrainConfig,
+        DataConfig,
+        ModelConfig,
+        MonitoringConfig,
+    ))
     return parser.parse_args_into_dataclasses()
