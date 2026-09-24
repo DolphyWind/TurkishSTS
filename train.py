@@ -50,7 +50,6 @@ class Trainer:
         self.best_epoch: Optional[int] = None
         self.best_loss: float = float("inf")
 
-        # TODO: Check if there is anything to resume from. If so handle it here
         self.seed: Optional[int] = self.train_config.seed
         self.deterministic: bool = self.train_config.deterministic
 
