@@ -87,10 +87,6 @@ class DataConfig:
         default_factory=list,
         metadata={"help": "Parquet files for validation. Validation is optional but highly encouraged."},
     )
-    use_augmentations: bool = field(
-        default=False,
-        metadata={"help": "Use additional data augmentations."},
-    )
 
     def __post_init__(self) -> None:
         if not self.pq_files:
@@ -138,7 +134,11 @@ class MonitoringConfig:
         metadata={"help": "Name of the MLFlow experiment."},
     )
     run_name: str = field(
-        metadata={"help": "Name of the MLFlow run."}
+        metadata={"help": "Name of the MLFlow run."},
+    )
+    resume_from: Optional[str] = field(
+        default=None,
+        metadata={"help": "Path to resume from."},
     )
     output_base_path: str = field(
         default="output/",

@@ -1,7 +1,7 @@
 from contextlib import nullcontext
 from dataclasses import asdict
 from pathlib import Path
-from typing import List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from accelerate import Accelerator
 from accelerate.utils import DataLoaderConfiguration, set_seed
@@ -43,9 +43,12 @@ class Trainer:
                 use_stateful_dataloader=True,
             ),
         )
+
         self.device: torch.device = self.accelerator.device
-        self.start_epoch: int = 1
+        self.epoch: int = 1
         self.run_id: Optional[str] = None
+        self.best_epoch: Optional[int] = None
+        self.best_loss: float = float("inf")
 
         # TODO: Check if there is anything to resume from. If so handle it here
         self.seed: Optional[int] = self.train_config.seed
@@ -117,7 +120,6 @@ class Trainer:
                 pass
 
         self._validation: bool = self.val_loader is not None
-        self.num_epochs: int = train_config.num_epochs
         self.tokenizer: PreTrainedTokenizerBase = self.model.tokenizer
 
         if self._validation:
@@ -128,15 +130,24 @@ class Trainer:
             self.model, self.optimizer, self.train_loader, self.lr_scheduler = self.accelerator.prepare(
                 self.model, self.optimizer, self.train_loader, self.lr_scheduler
             )
+        self.accelerator.register_for_checkpointing(self)
+
+        resume_path = self.monitoring_config.resume_from
 
         self.out_path: Path = Path(monitoring_config.output_base_path) / monitoring_config.experiment_name / monitoring_config.run_name
         self.out_path.mkdir(exist_ok=True, parents=True)
-        if any(self.out_path.iterdir()):
+        if any(self.out_path.iterdir()) and resume_path is None:
             raise RuntimeError("The output directory exist and is non-empty.")
+
+        self.accelerate_save_path: Path = self.out_path / "state"
+
+        if resume_path:
+            self.accelerator.load_state(str(Path(resume_path) / "state"))
 
     def train(self):
         ctx = nullcontext()
         mlflow_logger: Union[MLFlowLogger, NullLogger] = NullLogger()
+
         if self.accelerator.is_main_process:
             mlflow.set_experiment(self.monitoring_config.experiment_name)
             ctx = mlflow.start_run(
@@ -158,8 +169,9 @@ class Trainer:
             self.run_id = run.info.run_id if run else self.run_id
             mlflow_logger.run_id = self.run_id
 
-            for epoch in range(self.start_epoch, self.num_epochs + 1):
-                train_loss: float = self._one_step(epoch, 'train') or float('inf')
+            for epoch in range(self.epoch, self.train_config.num_epochs + 1):
+                # Train loss is never None. This is to avoid pyright errors
+                train_loss: float = self._one_step(epoch, 'train') or float("inf")
                 val_loss: Optional[float] = self._one_step(epoch, 'val')
 
                 mlflow_logger.log_metric(
@@ -173,9 +185,29 @@ class Trainer:
                         val_loss,
                         step=epoch,
                     )
+
+                tracked_loss: float = val_loss if val_loss is not None else train_loss
+                is_best: bool = tracked_loss < self.best_loss
+
+                if is_best:
+                    self.best_epoch = epoch
+                    self.best_loss = tracked_loss
+
+                self.accelerator.wait_for_everyone()
+                if is_best:
+                    unwrapped = self.accelerator.unwrap_model(self.model)
+
+                    if self.accelerator.is_main_process:
+                        self.accelerator.save(
+                            unwrapped.state_dict(),
+                            self.out_path / "model_best.pth",
+                        )
+
+                self.epoch = epoch + 1
                 self.accelerator.save_state(
-                    str(self.out_path / "weights")
+                    str(self.accelerate_save_path)
                 )
+
             mlflow_logger.stop()
 
     def _seed(self):
@@ -201,10 +233,16 @@ class Trainer:
         loop: tqdm
         if mode == 'train':
             self.train_loader.set_epoch(epoch_num)  # pyright: ignore
-            loop = tqdm(self.train_loader, disable=not self.accelerator.is_main_process)
+            loop = tqdm(
+                self.train_loader,
+                disable=not self.accelerator.is_main_process,
+            )
         elif mode == 'val':
             self.val_loader.set_epoch(epoch_num)  # pyright: ignore
-            loop = tqdm(self.val_loader, disable=not self.accelerator.is_main_process)
+            loop = tqdm(
+                self.val_loader,
+                disable=not self.accelerator.is_main_process,
+            )
 
         desc: str = "Epoch" if mode == 'train' else "Validation"
         loop.set_description_str(f"{desc} [{epoch_num}/{self.num_epochs}]")
@@ -286,6 +324,32 @@ class Trainer:
         avg_loss: float = losses_gathered.mean().item()
 
         return avg_loss
+
+    def state_dict(self) -> Dict[str, Any]:
+        return {
+            "run_id": self.run_id,
+            "epoch": self.epoch,
+            "best_epoch": self.best_epoch,
+            "best_loss": self.best_loss,
+            "train_config": asdict(self.train_config),
+            "data_config": asdict(self.data_config),
+            "model_config": asdict(self.model_config),
+            "monitoring_config": asdict(self.monitoring_config),
+        }
+
+    def load_state_dict(
+        self,
+        state: Dict[str, Any],
+    ) -> None:
+        self.run_id = state.get("run_id", None)
+        self.epoch = state.get("epoch", 1)
+        self.best_epoch = state.get("best_epoch", None)
+        self.best_loss = state.get("best_loss", float("inf"))
+
+        self.train_config = TrainConfig(**state["train_config"])
+        self.data_config = DataConfig(**state["data_config"])
+        self.model_config = ModelConfig(**state["model_config"])
+        self.monitoring_config = MonitoringConfig(**state["monitoring_config"])
 
 
 def main():

@@ -7,8 +7,8 @@ from sklearn.model_selection import GroupShuffleSplit
 DATA_PATH: Path = Path("/run/media/yunus/HDD_5TB/data/NLP/vngrs-web-corpus-sentences/train-00000-of-00284_sat.parquet")
 OUT_BASE_PATH: Path = Path("data/")
 
-TRAIN_SIZE: int = 100_000
-VAL_SIZE: int = 10_000
+TRAIN_SIZE: int = 1_000
+VAL_SIZE: int = 100
 SEED: int = 42
 
 
@@ -30,8 +30,8 @@ def main():
     val_df: pd.DataFrame = df.iloc[val_index]
 
     OUT_BASE_PATH.mkdir(exist_ok=True, parents=True)
-    train_df.to_parquet(OUT_BASE_PATH / "train_mini.parquet")
-    val_df.to_parquet(OUT_BASE_PATH / "val_mini.parquet")
+    train_df.to_parquet(OUT_BASE_PATH / "train_tiny.parquet")
+    val_df.to_parquet(OUT_BASE_PATH / "val_tiny.parquet")
 
 
 if __name__ == '__main__':
