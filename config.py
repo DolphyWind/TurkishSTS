@@ -140,6 +140,10 @@ class MonitoringConfig:
     run_name: str = field(
         metadata={"help": "Name of the MLFlow run."}
     )
+    output_base_path: str = field(
+        default="output/",
+        metadata={"help": "Base output path."},
+    )
 
 
 def parse_args() -> Tuple[TrainConfig, DataConfig, ModelConfig, MonitoringConfig]:

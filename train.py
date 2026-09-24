@@ -1,6 +1,9 @@
+import atexit
 from contextlib import nullcontext
+from dataclasses import asdict
+from pathlib import Path
 import random
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Union
 
 from accelerate import Accelerator
 from accelerate.utils import DataLoaderConfiguration, set_seed
@@ -18,6 +21,7 @@ from config import DataConfig, ModelConfig, MonitoringConfig, TrainConfig, parse
 from dataset import SentenceDataset, load_and_merge, simple_collate_fn
 from loss import dcl_loss, off_dropout_infonce_loss
 from lr_scheduler import LinearWarmupCosineDecay
+from mlflow_logger import MLFlowLogger, NullLogger
 from model import STSModel
 from util import dropout_set_to, randn_like
 
@@ -43,6 +47,8 @@ class Trainer:
             ),
         )
         self.device: torch.device = self.accelerator.device
+        self.start_epoch: int = 1
+        self.run_id: Optional[str] = None
 
         # TODO: Check if there is anything to resume from. If so handle it here
         self.seed: Optional[int] = self.train_config.seed
@@ -126,18 +132,55 @@ class Trainer:
                 self.model, self.optimizer, self.train_loader, self.lr_scheduler
             )
 
+        self.out_path: Path = Path(monitoring_config.output_base_path) / monitoring_config.experiment_name / monitoring_config.run_name
+        self.out_path.mkdir(exist_ok=True, parents=True)
+        if any(self.out_path.iterdir()):
+            raise RuntimeError("The output directory exist and is non-empty.")
+
     def train(self):
         ctx = nullcontext()
+        mlflow_logger: Union[MLFlowLogger, NullLogger] = NullLogger()
         if self.accelerator.is_main_process:
             mlflow.set_experiment(self.monitoring_config.experiment_name)
             ctx = mlflow.start_run(
                 run_name=self.monitoring_config.run_name,
+                run_id=self.run_id,
             )
+            mlflow_logger = MLFlowLogger(run_id=self.run_id)
+            atexit.register(mlflow_logger.stop)
+            if self.run_id is None:
+                for cfg in (
+                    self.train_config,
+                    self.model_config,
+                    self.monitoring_config,
+                    self.data_config,
+                ):
+                    for k, v in asdict(cfg).items():
+                        mlflow_logger.log_param(k, v)
 
-        with ctx:
-            for epoch in range(1, self.num_epochs + 1):
-                current_loss: float = self._one_step(epoch, 'train') or float('inf')
-                current_loss = self._one_step(epoch, 'val') or current_loss
+        with ctx as run:
+            self.run_id = run.info.run_id if run else self.run_id
+            mlflow_logger.run_id = self.run_id
+
+            for epoch in range(self.start_epoch, self.num_epochs + 1):
+                train_loss: float = self._one_step(epoch, 'train') or float('inf')
+                val_loss: Optional[float] = self._one_step(epoch, 'val')
+
+                mlflow_logger.log_metric(
+                    "train_loss",
+                    train_loss,
+                    step=epoch,
+                )
+                if val_loss is not None:
+                    mlflow_logger.log_metric(
+                        "val_loss",
+                        val_loss,
+                        step=epoch,
+                    )
+                self.accelerator.save_state(
+                    str(self.out_path / "weights")
+                )
+            mlflow_logger.stop()
 
     def _seed(self):
         if self.seed is None:
