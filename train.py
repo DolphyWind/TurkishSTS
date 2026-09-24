@@ -1,15 +1,12 @@
-import atexit
 from contextlib import nullcontext
 from dataclasses import asdict
 from pathlib import Path
-import random
 from typing import List, Literal, Optional, Union
 
 from accelerate import Accelerator
 from accelerate.utils import DataLoaderConfiguration, set_seed
 from datasets import Dataset as HFDataset
 import mlflow
-import numpy as np
 from peft import TaskType
 from transformers import PreTrainedTokenizerBase
 import torch
@@ -147,7 +144,6 @@ class Trainer:
                 run_id=self.run_id,
             )
             mlflow_logger = MLFlowLogger(run_id=self.run_id)
-            atexit.register(mlflow_logger.stop)
             if self.run_id is None:
                 for cfg in (
                     self.train_config,

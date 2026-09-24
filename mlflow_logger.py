@@ -1,3 +1,4 @@
+import atexit
 from threading import Thread, Event
 from typing import Any, Optional, TypeVar, Iterator
 import mlflow
@@ -23,6 +24,7 @@ class MLFlowLogger:
         self.__stop_event: Event = Event()
         self.__main_thread = Thread(target=self.__mainloop)
         self.__main_thread.start()
+        atexit.register(self.stop)
 
     def log_param(self, name: str, value: Any, **kwargs):
         self.__queue.put(lambda: mlflow.log_param(name, value, **kwargs))
