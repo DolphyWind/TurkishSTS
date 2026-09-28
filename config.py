@@ -87,6 +87,14 @@ class DataConfig:
         default_factory=list,
         metadata={"help": "Parquet files for validation. Validation is optional but highly encouraged."},
     )
+    min_p: float = field(
+        default=0.2,
+        metadata={"help": "Minimum probability of selecting faraway samples"},
+    )
+    max_p: float = field(
+        default=0.9,
+        metadata={"help": "Maximum probability of selecting faraway samples"},
+    )
 
     def __post_init__(self) -> None:
         if not self.pq_files:
