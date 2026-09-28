@@ -82,19 +82,10 @@ class Trainer:
             hf_dataset=self.__val_hf_dataset,
         ) if self.__val_hf_dataset else None
 
-        self.train_sampler: NearFarSampler = NearFarSampler(
-            data_len=len(self.train_dataset),
-            batch_size=train_config.batch_size,
-            seed=self.seed or 0,
-            max_epochs=train_config.num_epochs,
-            min_p=data_config.min_p,
-            max_p=data_config.max_p,
-        )
-        self.train_loader: DataLoader = DataLoader(
-            self.train_dataset,
-            batch_sampler=self.train_sampler,
-            collate_fn=simple_collate_fn,
-        )
+        self.train_loader: DataLoader
+        self.train_sampler: Optional[NearFarSampler]
+        self._initialize_sampler_and_loader()
+
         self.val_loader: Optional[DataLoader] = DataLoader(
             self.val_dataset,
             batch_size=train_config.batch_size,
@@ -138,7 +129,6 @@ class Trainer:
                 self.model, self.optimizer, self.train_loader, self.lr_scheduler
             )
         self.accelerator.register_for_checkpointing(self)
-        self.accelerator.register_for_checkpointing(self.train_sampler)
 
         resume_path = self.monitoring_config.resume_from
 
@@ -178,8 +168,6 @@ class Trainer:
             mlflow_logger.run_id = self.run_id
 
             for epoch in range(self.epoch, self.train_config.num_epochs + 1):
-                self.train_sampler.set_epoch(epoch)
-
                 # Train loss is never None. This is to avoid pyright errors
                 train_loss: float = self._one_step(epoch, 'train') or float("inf")
                 val_loss: Optional[float] = self._one_step(epoch, 'val')
@@ -214,11 +202,41 @@ class Trainer:
                         )
 
                 self.epoch = epoch + 1
+                match self.data_config.sampler_to_use:
+                    case "near_far":
+                        assert isinstance(self.train_sampler, NearFarSampler), "Stupid type system"
+                        self.train_sampler.set_epoch(self.epoch)
+                    case "regular":
+                        pass
                 self.accelerator.save_state(
                     str(self.accelerate_save_path)
                 )
 
             mlflow_logger.stop()
+
+    def _initialize_sampler_and_loader(self):
+        match self.data_config.sampler_to_use:
+            case "near_far":
+                self.train_sampler = NearFarSampler(
+                    data_len=len(self.train_dataset),
+                    batch_size=self.train_config.batch_size,
+                    seed=self.seed or 0,
+                    max_epochs=self.train_config.num_epochs,
+                    min_p=self.data_config.min_p,
+                    max_p=self.data_config.max_p,
+                )
+                self.train_loader = DataLoader(
+                    self.train_dataset,
+                    batch_sampler=self.train_sampler,
+                    collate_fn=simple_collate_fn,
+                )
+            case "regular":
+                self.train_loader = DataLoader(
+                    self.train_dataset,
+                    batch_size=self.train_config.batch_size,
+                    shuffle=True,
+                    collate_fn=simple_collate_fn,
+                )
 
     def _seed(self):
         if self.seed is None:
@@ -255,7 +273,7 @@ class Trainer:
             )
 
         desc: str = "Epoch" if mode == 'train' else "Validation"
-        loop.set_description_str(f"{desc} [{epoch_num}/{self.num_epochs}]")
+        loop.set_description_str(f"{desc} [{epoch_num}/{self.train_config.num_epochs}]")
         total_loss: float = 0.0
         losses: List[float] = []
 

@@ -87,13 +87,17 @@ class DataConfig:
         default_factory=list,
         metadata={"help": "Parquet files for validation. Validation is optional but highly encouraged."},
     )
+    sampler_to_use: Literal["regular", "near_far"] = field(
+        default="near_far",
+        metadata={"help": "Sampler to use."},
+    )
     min_p: float = field(
         default=0.2,
-        metadata={"help": "Minimum probability of selecting faraway samples"},
+        metadata={"help": "Minimum probability of selecting faraway samples (for NearFarSampler)"},
     )
     max_p: float = field(
         default=0.9,
-        metadata={"help": "Maximum probability of selecting faraway samples"},
+        metadata={"help": "Maximum probability of selecting faraway samples (for NearFarSampler)"},
     )
 
     def __post_init__(self) -> None:
