@@ -90,7 +90,7 @@ def main():
         lambda x: json.dumps(x, ensure_ascii=False),
         data
     ))
-    out: str = "\n".join(deseralized)
+    out: str = "\n".join(deserialized)
 
     data_folder: Path = Path("data/")
     data_folder.mkdir(exist_ok=True, parents=True)
