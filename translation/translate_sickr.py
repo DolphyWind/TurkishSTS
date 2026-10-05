@@ -35,6 +35,7 @@ def main():
         dtype=torch.bfloat16,
         quantization_config=bnb_config,
         device_map="auto",
+        max_memory={0: "6GiB", "cpu": "64GiB"},
     )
     tokenizer = AutoTokenizer.from_pretrained(
         model_id,
