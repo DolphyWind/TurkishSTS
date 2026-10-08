@@ -11,7 +11,7 @@ def main():
 
     sentences1: List[str] = val["sentence1"]
     sentences2: List[str] = val["sentence2"]
-    scores: List[float] = [s / 5.0 for s in val["score"]]
+    scores: List[float] = [(s - 1.0) / 4.0 for s in val["score"]]
 
     evaluate_all_and_print(
         sentences1=sentences1,
