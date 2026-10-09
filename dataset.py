@@ -16,7 +16,7 @@ def load_and_merge(
     dataset: DatasetDict = load_dataset(
         'parquet',
         data_files=segments,
-        cache_dir="/run/media/yunus/HDD_5TB/hf_cache",
+        # cache_dir="/run/media/yunus/HDD_5TB/hf_cache",
         num_proc=8,
     )
     return concatenate_datasets(list(dataset.values()))
