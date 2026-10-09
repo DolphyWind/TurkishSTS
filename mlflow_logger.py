@@ -22,7 +22,10 @@ class MLFlowLogger:
         self.run_id = run_id
         self.__queue: Queue = Queue()
         self.__stop_event: Event = Event()
-        self.__main_thread = Thread(target=self.__mainloop)
+        self.__main_thread = Thread(
+            target=self.__mainloop,
+            daemon=True,
+        )
         self.__main_thread.start()
         atexit.register(self.stop)
 

@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Literal, Optional, Tuple
+from typing import List, Literal, Optional, Tuple, Union
 
 from transformers import HfArgumentParser
 
@@ -96,8 +96,16 @@ class DataConfig:
         metadata={"help": "Minimum probability of selecting faraway samples (for NearFarSampler)"},
     )
     max_p: float = field(
-        default=0.9,
+        default=0.7,
         metadata={"help": "Maximum probability of selecting faraway samples (for NearFarSampler)"},
+    )
+    train_size: float = field(
+        default=1.0,
+        metadata={"help": "Percentage or number of datapoints to be used. Float values are treated as percentage."}
+    )
+    val_size: float = field(
+        default=1.0,
+        metadata={"help": "Percentage or number of datapoints to be used. Float values are treated as percentage. Doesn't do anything if validation data does not exist."}  # noqa
     )
 
     def __post_init__(self) -> None:

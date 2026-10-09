@@ -11,7 +11,7 @@ from peft import TaskType
 from transformers import PreTrainedTokenizerBase
 import torch
 import torch.optim as optim
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 
 from config import DataConfig, ModelConfig, MonitoringConfig, TrainConfig, parse_args
@@ -21,7 +21,7 @@ from lr_scheduler import LinearWarmupCosineDecay
 from mlflow_logger import MLFlowLogger, NullLogger
 from model import STSModel
 from samplers import NearFarSampler
-from util import dropout_set_to, randn_like
+from util import dropout_set_to, pick_subset, randn_like
 
 
 class Trainer:
@@ -75,23 +75,37 @@ class Trainer:
             data_config.val_pq_files  # pyright: ignore
         ) if data_config.val_pq_files else None
 
-        self.train_dataset: SentenceDataset = SentenceDataset(
+        self.train_dataset: Union[SentenceDataset, Subset] = SentenceDataset(
             hf_dataset=self.__hf_dataset,
         )
-        self.val_dataset: Optional[SentenceDataset] = SentenceDataset(
-            hf_dataset=self.__val_hf_dataset,
-        ) if self.__val_hf_dataset else None
+        self.train_dataset = pick_subset(
+            self.train_dataset,
+            data_size=self.data_config.train_size,
+        )
+
+        self.val_dataset: Optional[Union[SentenceDataset, Subset]] = None
+        if self.__val_hf_dataset:
+            self.val_dataset = SentenceDataset(
+                hf_dataset=self.__val_hf_dataset,
+            )
+            self.val_dataset = pick_subset(
+                self.val_dataset,
+                data_size=self.data_config.val_size,
+            )
 
         self.train_loader: DataLoader
         self.train_sampler: Optional[NearFarSampler]
         self._initialize_sampler_and_loader()
 
-        self.val_loader: Optional[DataLoader] = DataLoader(
-            self.val_dataset,
-            batch_size=train_config.batch_size,
-            shuffle=True,
-            collate_fn=simple_collate_fn,
-        ) if self.val_dataset else None
+        self.val_loader: Optional[DataLoader] = None
+        if self.val_dataset:
+            self.val_loader = DataLoader(
+                self.val_dataset,
+                batch_size=train_config.batch_size,
+                shuffle=True,
+                collate_fn=simple_collate_fn,
+                pin_memory=True,
+            )
 
         self.optimizer: optim.Optimizer = optim.AdamW(
             self.model.parameters(),
@@ -167,52 +181,53 @@ class Trainer:
             self.run_id = run.info.run_id if run else self.run_id
             mlflow_logger.run_id = self.run_id
 
-            for epoch in range(self.epoch, self.train_config.num_epochs + 1):
-                # Train loss is never None. This is to avoid pyright errors
-                train_loss: float = self._one_step(epoch, 'train') or float("inf")
-                val_loss: Optional[float] = self._one_step(epoch, 'val')
+            try:
+                for epoch in range(self.epoch, self.train_config.num_epochs + 1):
+                    # Train loss is never None. This is to avoid pyright errors
+                    train_loss: float = self._one_step(epoch, 'train') or float("inf")
+                    val_loss: Optional[float] = self._one_step(epoch, 'val')
 
-                mlflow_logger.log_metric(
-                    "train_loss",
-                    train_loss,
-                    step=epoch,
-                )
-                if val_loss is not None:
                     mlflow_logger.log_metric(
-                        "val_loss",
-                        val_loss,
+                        "train_loss",
+                        train_loss,
                         step=epoch,
                     )
-
-                tracked_loss: float = val_loss if val_loss is not None else train_loss
-                is_best: bool = tracked_loss < self.best_loss
-
-                if is_best:
-                    self.best_epoch = epoch
-                    self.best_loss = tracked_loss
-
-                self.accelerator.wait_for_everyone()
-                if is_best:
-                    unwrapped = self.accelerator.unwrap_model(self.model)
-
-                    if self.accelerator.is_main_process:
-                        self.accelerator.save(
-                            unwrapped.state_dict(),
-                            self.out_path / "model_best.pth",
+                    if val_loss is not None:
+                        mlflow_logger.log_metric(
+                            "val_loss",
+                            val_loss,
+                            step=epoch,
                         )
 
-                self.epoch = epoch + 1
-                match self.data_config.sampler_to_use:
-                    case "near_far":
-                        assert isinstance(self.train_sampler, NearFarSampler), "Stupid type system"
-                        self.train_sampler.set_epoch(self.epoch)
-                    case "regular":
-                        pass
-                self.accelerator.save_state(
-                    str(self.accelerate_save_path)
-                )
+                    tracked_loss: float = val_loss if val_loss is not None else train_loss
+                    is_best: bool = tracked_loss < self.best_loss
 
-            mlflow_logger.stop()
+                    if is_best:
+                        self.best_epoch = epoch
+                        self.best_loss = tracked_loss
+
+                    self.accelerator.wait_for_everyone()
+                    if is_best:
+                        unwrapped = self.accelerator.unwrap_model(self.model)
+
+                        if self.accelerator.is_main_process:
+                            self.accelerator.save(
+                                unwrapped.state_dict(),
+                                self.out_path / "model_best.pth",
+                            )
+
+                    self.epoch = epoch + 1
+                    match self.data_config.sampler_to_use:
+                        case "near_far":
+                            assert isinstance(self.train_sampler, NearFarSampler), "Stupid type system"
+                            self.train_sampler.set_epoch(self.epoch)
+                        case "regular":
+                            pass
+                    self.accelerator.save_state(
+                        str(self.accelerate_save_path)
+                    )
+            finally:
+                mlflow_logger.stop()
 
     def _initialize_sampler_and_loader(self):
         match self.data_config.sampler_to_use:
@@ -229,6 +244,7 @@ class Trainer:
                     self.train_dataset,
                     batch_sampler=self.train_sampler,
                     collate_fn=simple_collate_fn,
+                    pin_memory=True,
                 )
             case "regular":
                 self.train_loader = DataLoader(
@@ -236,6 +252,7 @@ class Trainer:
                     batch_size=self.train_config.batch_size,
                     shuffle=True,
                     collate_fn=simple_collate_fn,
+                    pin_memory=True,
                 )
 
     def _seed(self):

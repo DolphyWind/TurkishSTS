@@ -1,7 +1,11 @@
 from contextlib import contextmanager
+from typing import Optional, Union
 
+import numpy as np
+import numpy.typing as npt
 import torch
 import torch.nn as nn
+from torch.utils.data import Dataset, Subset
 
 
 @contextmanager
@@ -28,3 +32,25 @@ def randn_like(
     std: float = var ** .5
     g = torch.randn_like(x)
     return (mean + g * std)
+
+
+def pick_subset(
+    dataset: Dataset,
+    data_size: float,
+    generator: Optional[np.random.Generator] = None,
+) -> Subset:
+    if data_size < 0.0 or data_size > len(dataset):
+        raise RuntimeError("Invalid data size!")
+    if data_size > 1.0:
+        data_size = int(data_size)
+    else:
+        data_size = int(len(dataset) * data_size)
+
+    if generator is None:
+        generator = np.random.default_rng()
+
+    idx: npt.NDArray = np.arange(0, len(dataset))
+    generator.shuffle(idx)
+    idx = idx[:data_size]
+
+    return Subset(dataset, idx)
