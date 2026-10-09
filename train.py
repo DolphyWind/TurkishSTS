@@ -7,6 +7,7 @@ from accelerate import Accelerator
 from accelerate.utils import DataLoaderConfiguration, set_seed
 from datasets import Dataset as HFDataset
 import mlflow
+import numpy as np
 from peft import TaskType
 from transformers import PreTrainedTokenizerBase
 import torch
@@ -81,6 +82,7 @@ class Trainer:
         self.train_dataset = pick_subset(
             self.train_dataset,
             data_size=self.data_config.train_size,
+            generator=np.random.default_rng(self.seed),
         )
 
         self.val_dataset: Optional[Union[SentenceDataset, Subset]] = None
@@ -91,6 +93,7 @@ class Trainer:
             self.val_dataset = pick_subset(
                 self.val_dataset,
                 data_size=self.data_config.val_size,
+                generator=np.random.default_rng(self.seed),
             )
 
         self.train_loader: DataLoader
