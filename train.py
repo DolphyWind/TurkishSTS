@@ -184,6 +184,7 @@ class Trainer:
             self.run_id = run.info.run_id if run else self.run_id
             mlflow_logger.run_id = self.run_id
 
+            print("Training started!")
             try:
                 for epoch in range(self.epoch, self.train_config.num_epochs + 1):
                     # Train loss is never None. This is to avoid pyright errors
