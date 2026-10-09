@@ -82,7 +82,7 @@ class Trainer:
         self.train_dataset = pick_subset(
             self.train_dataset,
             data_size=self.data_config.train_size,
-            generator=np.random.default_rng(self.seed),
+            generator=np.random.default_rng((self.seed, 0)),
         )
 
         self.val_dataset: Optional[Union[SentenceDataset, Subset]] = None
@@ -93,7 +93,7 @@ class Trainer:
             self.val_dataset = pick_subset(
                 self.val_dataset,
                 data_size=self.data_config.val_size,
-                generator=np.random.default_rng(self.seed),
+                generator=np.random.default_rng((self.seed, 1)),
             )
 
         self.train_loader: DataLoader
