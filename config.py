@@ -1,6 +1,7 @@
+import argparse
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Literal, Optional, Tuple, Union
+from typing import List, Literal, Optional, Tuple
 
 from transformers import HfArgumentParser
 
@@ -173,4 +174,24 @@ def parse_args() -> Tuple[TrainConfig, DataConfig, ModelConfig, MonitoringConfig
         ModelConfig,
         MonitoringConfig,
     ))
-    return parser.parse_args_into_dataclasses()
+
+    resume_parser: argparse.ArgumentParser = argparse.ArgumentParser(add_help=False)
+    resume_parser.add_argument(
+        "--resume_from",
+        type=str,
+        default=None,
+    )
+    known, _ = resume_parser.parse_known_args()
+    if known.resume_from is None:
+        return parser.parse_args_into_dataclasses()
+
+    return (
+        TrainConfig(),
+        DataConfig(pq_files=["<resume>"]),
+        ModelConfig(base_model=""),
+        MonitoringConfig(
+            experiment_name="",
+            run_name="",
+            resume_from=known.resume_from,
+        ),
+    )

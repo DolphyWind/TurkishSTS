@@ -62,7 +62,7 @@ class NearFarSampler(Sampler[List[int]]):
         self.batch_size = state["batch_size"]
         self.drop_last = state["drop_last"]
         self.seed = state["seed"]
-        self.epoch = state["epoch"]
+        # self.epoch = state["epoch"]
         self.max_epochs = state["max_epochs"]
 
     def state_dict(self) -> Dict[str, Any]:

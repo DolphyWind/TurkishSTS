@@ -1,5 +1,6 @@
 from contextlib import nullcontext
 from dataclasses import asdict
+import json
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Union
 
@@ -37,6 +38,24 @@ class Trainer:
         self.data_config: DataConfig = data_config
         self.model_config: ModelConfig = model_config
         self.monitoring_config: MonitoringConfig = monitoring_config
+
+        resume_path = self.monitoring_config.resume_from
+
+        if resume_path is not None:
+            config_path: Path = Path(resume_path) / "config.json"
+            if not config_path.exists():
+                raise FileNotFoundError(f"{config_path} does not exist.")
+            saved: Dict[str, Any] = json.loads(config_path.read_text())
+            train_config = TrainConfig(**saved["train_config"])
+            data_config = DataConfig(**saved["data_config"])
+            model_config = ModelConfig(**saved["model_config"])
+            monitoring_config = MonitoringConfig(**saved["monitoring_config"])
+            monitoring_config.resume_from = resume_path
+
+            self.train_config = train_config
+            self.data_config = data_config
+            self.model_config = model_config
+            self.monitoring_config = monitoring_config
 
         self.accelerator = Accelerator(
             mixed_precision=train_config.mixed_precision,
@@ -82,7 +101,7 @@ class Trainer:
         self.train_dataset = pick_subset(
             self.train_dataset,
             data_size=self.data_config.train_size,
-            generator=np.random.default_rng((self.seed, 0)),
+            generator=np.random.default_rng(self.seed and (self.seed, 0)),
         )
 
         self.val_dataset: Optional[Union[SentenceDataset, Subset]] = None
@@ -93,7 +112,7 @@ class Trainer:
             self.val_dataset = pick_subset(
                 self.val_dataset,
                 data_size=self.data_config.val_size,
-                generator=np.random.default_rng((self.seed, 1)),
+                generator=np.random.default_rng(self.seed and (self.seed, 1)),
             )
 
         self.train_loader: DataLoader
@@ -147,8 +166,6 @@ class Trainer:
             )
         self.accelerator.register_for_checkpointing(self)
 
-        resume_path = self.monitoring_config.resume_from
-
         self.out_path: Path = Path(monitoring_config.output_base_path) / monitoring_config.experiment_name / monitoring_config.run_name
         self.out_path.mkdir(exist_ok=True, parents=True)
         if any(self.out_path.iterdir()) and resume_path is None:
@@ -158,6 +175,22 @@ class Trainer:
 
         if resume_path:
             self.accelerator.load_state(str(Path(resume_path) / "state"))
+        else:
+            self.accelerator.wait_for_everyone()
+            if self.accelerator.is_main_process:
+                saved: Dict[str, Any] = {
+                    "train_config": asdict(self.train_config),
+                    "data_config": asdict(self.data_config),
+                    "model_config": asdict(self.model_config),
+                    "monitoring_config": asdict(self.monitoring_config),
+                }
+                (self.out_path / "config.json").write_text(
+                    json.dumps(
+                        saved,
+                        indent=4,
+                        default=str,
+                    ),
+                )
 
     def train(self):
         ctx = nullcontext()
