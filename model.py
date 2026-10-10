@@ -28,20 +28,23 @@ class STSModel(nn.Module):
         self.use_lora: bool = lora
         self.lora_config: Optional[LoraConfig] = LoraConfig(**lora_config) if lora_config else None
 
-        self._base_model: PreTrainedModel
+        base_model: PreTrainedModel
         self.model_config: PreTrainedConfig = AutoConfig.from_pretrained(self.base_model_name)
         self.tokenizer: PreTrainedTokenizerBase = AutoTokenizer.from_pretrained(self.base_model_name)
         if self.initialize_new:
-            self._base_model = AutoModel.from_config(self.model_config)
+            base_model = AutoModel.from_config(self.model_config)
         else:
-            self._base_model = AutoModel.from_pretrained(self.base_model_name)
+            base_model = AutoModel.from_pretrained(self.base_model_name)
 
         self.base: Union[PeftModel, PreTrainedModel]
         if self.use_lora:
             assert self.lora_config is not None
-            self.base = get_peft_model(self._base_model, self.lora_config)
+            self.base = get_peft_model(
+                base_model,
+                self.lora_config,
+            )
         else:
-            self.base = self._base_model
+            self.base = base_model
 
     def forward(
         self,

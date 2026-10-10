@@ -221,22 +221,24 @@ class Trainer:
             try:
                 for epoch in range(self.epoch, self.train_config.num_epochs + 1):
                     # Train loss is never None. This is to avoid pyright errors
-                    train_loss: float = self._one_step(epoch, 'train') or float("inf")
-                    val_loss: Optional[float] = self._one_step(epoch, 'val')
+                    train_metrics: Dict[str, float] = self._one_step(epoch, 'train') or {"loss": float("inf")}
+                    val_metrics: Optional[Dict[str, float]] = self._one_step(epoch, 'val')
 
-                    mlflow_logger.log_metric(
-                        "train_loss",
-                        train_loss,
-                        step=epoch,
-                    )
-                    if val_loss is not None:
+                    for name, value in train_metrics.items():
                         mlflow_logger.log_metric(
-                            "val_loss",
-                            val_loss,
+                            f"train_{name}",
+                            value,
                             step=epoch,
                         )
+                    if val_metrics is not None:
+                        for name, value in val_metrics.items():
+                            mlflow_logger.log_metric(
+                                f"val_{name}",
+                                value,
+                                step=epoch,
+                            )
 
-                    tracked_loss: float = val_loss if val_loss is not None else train_loss
+                    tracked_loss: float = val_metrics["loss"] if val_metrics is not None else train_metrics["loss"]
                     is_best: bool = tracked_loss < self.best_loss
 
                     if is_best:
@@ -307,7 +309,7 @@ class Trainer:
         self,
         epoch_num: int,
         mode: Literal['train', 'val'],
-    ) -> Optional[float]:
+    ) -> Optional[Dict[str, float]]:
         if mode == 'val' and not self._validation:
             return None
         self.model.train(mode == 'train')
@@ -329,7 +331,11 @@ class Trainer:
         desc: str = "Epoch" if mode == 'train' else "Validation"
         loop.set_description_str(f"{desc} [{epoch_num}/{self.train_config.num_epochs}]")
         total_loss: float = 0.0
+        total_infonce: float = 0.0
+        total_dcl: float = 0.0
         losses: List[float] = []
+        infonce_losses: List[float] = []
+        dcl_losses: List[float] = []
 
         grad_ctx = nullcontext() if mode == 'train' else torch.no_grad()
         with grad_ctx:
@@ -385,27 +391,40 @@ class Trainer:
                         self.lr_scheduler.step()
 
                 loss_float: float = loss.item()
+                infonce_float: float = infonce_loss.item()
+                dcl_float: float = dcl.item() * self.train_config.dcl_coefficient
                 total_loss += loss_float
-                avg_loss = total_loss / i
+                total_infonce += infonce_float
+                total_dcl += dcl_float
 
                 losses.append(loss_float)
+                infonce_losses.append(infonce_float)
+                dcl_losses.append(dcl_float)
                 lr: float = self.optimizer.param_groups[0]["lr"]
                 loop.set_postfix(
                     loss=loss_float,
-                    infonce=infonce_loss.item(),
-                    dcl=dcl.item() * self.train_config.dcl_coefficient,
-                    avg_loss=avg_loss,
+                    infonce=infonce_float,
+                    dcl=dcl_float,
+                    avg_loss=total_loss / i,
+                    avg_infonce=total_infonce / i,
+                    avg_dcl=total_dcl / i,
                     lr=lr,
                 )
 
-        losses_tensor: torch.Tensor = torch.tensor(
-            losses,
-            device=self.device
-        )
-        losses_gathered: torch.Tensor = self.accelerator.gather_for_metrics(losses_tensor)
-        avg_loss: float = losses_gathered.mean().item()
+        metrics: Dict[str, float] = {}
+        for name, values in (
+            ("loss", losses),
+            ("infonce", infonce_losses),
+            ("dcl", dcl_losses),
+        ):
+            values_tensor: torch.Tensor = torch.tensor(
+                values,
+                device=self.device,
+            )
+            values_gathered: torch.Tensor = self.accelerator.gather_for_metrics(values_tensor)
+            metrics[name] = values_gathered.mean().item()
 
-        return avg_loss
+        return metrics
 
     def state_dict(self) -> Dict[str, Any]:
         return {
