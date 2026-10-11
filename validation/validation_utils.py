@@ -1,10 +1,26 @@
-from typing import Dict, List, Set
+import json
+from pathlib import Path
+import sys
+import tempfile
+from typing import Any, Dict, List, Set, Union
+from peft import PeftModel, TaskType
 from sentence_transformers import SentenceTransformer
 from sentence_transformers.sentence_transformer.evaluation import EmbeddingSimilarityEvaluator
+from sentence_transformers.sentence_transformer.modules import Pooling, Transformer
 import torch
 
+sys.path.insert(
+    0,
+    str(Path(__file__).resolve().parent.parent),
+)
 
-MODEL_NAMES: List[str] = [
+from config import ModelConfig  # noqa: E402
+from model import STSModel  # noqa: E402
+
+
+MODEL_NAMES: List[Union[str, Path]] = [
+    # Path("./output/turkish_sts/colab_test_1/model_best.pth"),
+    Path("./output/turkish_sts/colab_test_2/model_best.pth"),
     "emrecan/bert-base-turkish-cased-mean-nli-stsb-tr",
     "ytu-ce-cosmos/turkish-e5-large",
     "ytu-ce-cosmos/modernbert-tr-embed",
@@ -54,15 +70,58 @@ def evaluate_model(
     sentences1: List[str],
     sentences2: List[str],
     scores: List[float],
-    model_name: str,
+    model_name: Union[str, Path],
 ) -> Dict[str, float]:
     print(f"Processing: {model_name}")
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
 
-    model: SentenceTransformer = SentenceTransformer(
-        model_name,
-        device=device,
-    )
+    model: SentenceTransformer
+    if isinstance(model_name, str):
+        model = SentenceTransformer(
+            model_name,
+            device=device,
+        )
+    else:
+        config_path: Path = model_name.parent / "config.json"
+        if not config_path.exists():
+            raise FileNotFoundError(f"{config_path} does not exist.")
+        saved: Dict[str, Any] = json.loads(config_path.read_text())
+        model_config: ModelConfig = ModelConfig(**saved["model_config"])
+        sts_model: STSModel = STSModel(
+            base_model=model_config.base_model,
+            initialize_new=model_config.initialize_new,
+            lora=model_config.lora,
+            lora_config={
+                "r": model_config.lora_r,
+                "lora_alpha": model_config.lora_alpha,
+                "lora_dropout": model_config.lora_dropout,
+                "bias": "none",
+                "task_type": TaskType.FEATURE_EXTRACTION,
+                "target_modules": model_config.lora_target_modules,
+                "modules_to_save": model_config.lora_modules_to_save,
+            },
+        )
+        state_dict: Dict[str, torch.Tensor] = torch.load(
+            model_name,
+            map_location=device,
+        )
+        sts_model.load_state_dict(state_dict)
+        if isinstance(sts_model.base, PeftModel):
+            sts_model.base = sts_model.base.merge_and_unload()
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            sts_model.base.save_pretrained(tmp_dir)
+            sts_model.tokenizer.save_pretrained(tmp_dir)
+            transformer: Transformer = Transformer(tmp_dir)
+            pooling: Pooling = Pooling(
+                transformer.get_embedding_dimension(),
+                "mean",
+            )
+            model = SentenceTransformer(
+                modules=[transformer, pooling],
+                device=device,
+            )
+
     evaluator: EmbeddingSimilarityEvaluator = EmbeddingSimilarityEvaluator(
         sentences1=sentences1,
         sentences2=sentences2,
@@ -83,7 +142,13 @@ def evaluate_all_and_print(
     results: Dict[str, Dict[str, float]] = dict()
 
     for model_name in MODEL_NAMES:
-        results[model_name] = evaluate_model(
+        name: str
+        if isinstance(model_name, Path):
+            name = model_name.parent.name
+        else:
+            name = model_name
+
+        results[name] = evaluate_model(
             sentences1=sentences1,
             sentences2=sentences2,
             scores=scores,
