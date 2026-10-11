@@ -36,9 +36,10 @@ class MLFlowLogger:
         self.__queue.put(lambda: mlflow.log_metric(key=key, value=value, **kwargs))
 
     def __mainloop(self):
-        while not self.__stop_event.is_set():
+        while True:
             task = self.__queue.get()
-            if task is None:
+            if task is None or self.__stop_event.is_set():
+                self.__queue.task_done()
                 break
             active = mlflow.active_run()
             if active is None:
@@ -57,10 +58,14 @@ class MLFlowLogger:
                     break
             self.__queue.task_done()
 
-    def stop(self):
-        self.__stop_event.set()
+    def stop(self, timeout: Optional[float] = 60.0):
+        if not self.__main_thread.is_alive():
+            return
         self.__queue.put(None)
-        self.__main_thread.join()
+        self.__main_thread.join(timeout)
+        if self.__main_thread.is_alive():
+            self.__stop_event.set()
+            self.__main_thread.join(timeout)
 
 
 class NullLogger:

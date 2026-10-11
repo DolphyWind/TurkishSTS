@@ -20,6 +20,7 @@ from config import DataConfig, ModelConfig, MonitoringConfig, TrainConfig, parse
 from dataset import SentenceDataset, load_and_merge, simple_collate_fn
 from loss import dcl_loss, off_dropout_infonce_loss
 from lr_scheduler import LinearWarmupCosineDecay
+from metrics import MetricLogger
 from mlflow_logger import MLFlowLogger, NullLogger
 from model import STSModel
 from samplers import NearFarSampler
@@ -193,29 +194,25 @@ class Trainer:
                 )
 
     def train(self):
-        ctx = nullcontext()
-        mlflow_logger: Union[MLFlowLogger, NullLogger] = NullLogger()
+        metric_logger = MetricLogger(
+            is_main_process=self.accelerator.is_main_process,
+            experiment_name=self.monitoring_config.experiment_name,
+            run_name=self.monitoring_config.run_name,
+            run_id=self.run_id,
+            out_dir=self.out_path,
+        )
 
-        if self.accelerator.is_main_process:
-            mlflow.set_experiment(self.monitoring_config.experiment_name)
-            ctx = mlflow.start_run(
-                run_name=self.monitoring_config.run_name,
-                run_id=self.run_id,
-            )
-            mlflow_logger = MLFlowLogger(run_id=self.run_id)
-            if self.run_id is None:
-                for cfg in (
-                    self.train_config,
-                    self.model_config,
-                    self.monitoring_config,
-                    self.data_config,
-                ):
-                    for k, v in asdict(cfg).items():
-                        mlflow_logger.log_param(k, v)
+        for cfg in (
+            self.train_config,
+            self.model_config,
+            self.monitoring_config,
+            self.data_config,
+        ):
+            metric_logger.log_cfg(cfg)
 
-        with ctx as run:
+        with metric_logger.ctx as run:
             self.run_id = run.info.run_id if run else self.run_id
-            mlflow_logger.run_id = self.run_id
+            metric_logger.set_run_id(self.run_id)
 
             print("Training started!")
             try:
@@ -225,14 +222,14 @@ class Trainer:
                     val_metrics: Optional[Dict[str, float]] = self._one_step(epoch, 'val')
 
                     for name, value in train_metrics.items():
-                        mlflow_logger.log_metric(
+                        metric_logger.log_metric(
                             f"train_{name}",
                             value,
                             step=epoch,
                         )
                     if val_metrics is not None:
                         for name, value in val_metrics.items():
-                            mlflow_logger.log_metric(
+                            metric_logger.log_metric(
                                 f"val_{name}",
                                 value,
                                 step=epoch,
@@ -262,11 +259,12 @@ class Trainer:
                             self.train_sampler.set_epoch(self.epoch)
                         case "regular":
                             pass
+                    metric_logger.write_to_disk()
                     self.accelerator.save_state(
                         str(self.accelerate_save_path)
                     )
             finally:
-                mlflow_logger.stop()
+                metric_logger.stop()
 
     def _initialize_sampler_and_loader(self):
         match self.data_config.sampler_to_use:
