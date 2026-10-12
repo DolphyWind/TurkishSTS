@@ -19,12 +19,17 @@ from model import STSModel  # noqa: E402
 
 
 MODEL_NAMES: List[Union[str, Path]] = [
-    # Path("./output/turkish_sts/colab_test_1/model_best.pth"),
     Path("./output/turkish_sts/colab_test_2/model_best.pth"),
+    Path("./output/turkish_sts/ablation_regular_run/model_best.pth"),
+    Path("./output/turkish_sts/ablation_no_dsl/model_best.pth"),
+    Path("./output/turkish_sts/ablation_emrecan/model_best.pth"),
     "emrecan/bert-base-turkish-cased-mean-nli-stsb-tr",
     "ytu-ce-cosmos/turkish-e5-large",
     "ytu-ce-cosmos/modernbert-tr-embed",
     "atasoglu/turkish-e5-large-m2v",
+    "google-bert/bert-base-multilingual-cased",
+    "google-bert/bert-base-uncased",
+    "dbmdz/bert-base-turkish-cased",
 ]
 
 

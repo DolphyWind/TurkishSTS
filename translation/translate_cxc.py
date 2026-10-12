@@ -2,7 +2,7 @@ import json
 import logging
 from pathlib import Path
 import sys
-from typing import Any, Dict, List
+from typing import List
 import warnings
 
 from datasets import Dataset, load_dataset
@@ -45,75 +45,88 @@ def main():
 
     agg_dataset: DatasetDict = load_dataset("DolphyWind/cxc-sts-sentences", "aggregated")
 
-    data: Dict[str, List[Dict[str, Any]]] = dict()
-
-    for split in agg_dataset.keys():
-        dataset = agg_dataset[split]
-        data[split] = []
-        for row in tqdm(dataset):
-            s1: str = row["caption1"]
-            s2: str = row["caption2"]
-            score: float = row["agg_score"]
-            sampling_method: str = row["sampling_method"]
-            text1 = PROMPT.replace("SENTENCE_HERE", s1)
-            text2 = PROMPT.replace("SENTENCE_HERE", s2)
-            inputs = tokenizer(
-                [text1, text2],
-                add_special_tokens=False,
-                padding=True,
-                truncation=True,
-                return_tensors="pt",
-                padding_side="left",
-            ).to("cuda")
-
-            outputs = model.generate(
-                **inputs,
-                max_new_tokens=1024,
-                output_logits=True,
-                return_dict_in_generate=True,
-            )
-            for step, logits in enumerate(outputs.logits):
-                if torch.isnan(logits).any():
-                    print(f"NaN in raw logits at step {step}", file=sys.stderr)
-                    exit(1)
-                if torch.isinf(logits).any():
-                    print(f"Inf in raw logits at step {step}", file=sys.stderr)
-                    exit(1)
-            prompt_len = inputs["input_ids"].shape[1]
-            new_tokens = outputs.sequences[:, prompt_len:]
-
-            out1, out2 = tokenizer.batch_decode(
-                new_tokens,
-                skip_special_tokens=True,
-            )
-            data[split].append({
-                "caption1": out1,
-                "caption2": out2,
-                "agg_score": score,
-                "sampling_method": sampling_method,
-            })
-
     data_folder: Path = Path("data/")
     data_folder.mkdir(
         exist_ok=True,
         parents=True,
     )
 
-    for split, rows in data.items():
-        deserialized: List[str] = list(map(
-            lambda x: json.dumps(
-                x,
-                ensure_ascii=False,
-            ),
-            rows,
-        ))
-        out: str = "\n".join(deserialized)
+    for split in agg_dataset.keys():
+        dataset = agg_dataset[split]
+        out_path: Path = data_folder / f"cxc-{split}.jsonl"
+        done: int = 0
+        if out_path.exists():
+            with open(
+                out_path,
+                "r",
+                encoding="utf-8",
+            ) as f:
+                done = sum(1 for line in f if line.strip())
 
-        with open(
-            data_folder / f"cxc-{split}.jsonl",
-            "w",
-        ) as f:
-            f.write(out)
+        if done >= len(dataset):
+            continue
+
+        lines: List[str] = []
+        remaining = dataset.select(range(done, len(dataset)))
+        try:
+            for row in tqdm(
+                remaining,
+                initial=done,
+                total=len(dataset),
+                desc=split,
+            ):
+                s1: str = row["caption1"]
+                s2: str = row["caption2"]
+                score: float = row["agg_score"]
+                sampling_method: str = row["sampling_method"]
+                text1 = PROMPT.replace("SENTENCE_HERE", s1)
+                text2 = PROMPT.replace("SENTENCE_HERE", s2)
+                inputs = tokenizer(
+                    [text1, text2],
+                    add_special_tokens=False,
+                    padding=True,
+                    truncation=True,
+                    return_tensors="pt",
+                    padding_side="left",
+                ).to("cuda")
+
+                outputs = model.generate(
+                    **inputs,
+                    max_new_tokens=1024,
+                    output_logits=True,
+                    return_dict_in_generate=True,
+                )
+                for step, logits in enumerate(outputs.logits):
+                    if torch.isnan(logits).any():
+                        print(f"NaN in raw logits at step {step}", file=sys.stderr)
+                        exit(1)
+                    if torch.isinf(logits).any():
+                        print(f"Inf in raw logits at step {step}", file=sys.stderr)
+                        exit(1)
+                prompt_len = inputs["input_ids"].shape[1]
+                new_tokens = outputs.sequences[:, prompt_len:]
+
+                out1, out2 = tokenizer.batch_decode(
+                    new_tokens,
+                    skip_special_tokens=True,
+                )
+                lines.append(json.dumps(
+                    {
+                        "caption1": out1,
+                        "caption2": out2,
+                        "agg_score": score,
+                        "sampling_method": sampling_method,
+                    },
+                    ensure_ascii=False,
+                ))
+        finally:
+            if lines:
+                with open(
+                    out_path,
+                    "a",
+                    encoding="utf-8",
+                ) as f:
+                    f.write("".join(line + "\n" for line in lines))
 
 
 if __name__ == '__main__':
