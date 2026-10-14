@@ -22,7 +22,12 @@ MODEL_NAMES: List[Union[str, Path]] = [
     Path("./output/turkish_sts/colab_test_2/model_best.pth"),
     Path("./output/turkish_sts/ablation_regular_run/model_best.pth"),
     Path("./output/turkish_sts/ablation_no_dsl/model_best.pth"),
+    Path("./output/turkish_sts/ablation_1M_no_dsl/model_best.pth"),
+    Path("./output/turkish_sts/ablation_regular_sampler/model_best.pth"),
+    Path("./output/turkish_sts/ablation_low_p_value/model_best.pth"),
+    Path("./output/turkish_sts/ablation_uncased/model_best.pth"),
     Path("./output/turkish_sts/ablation_emrecan/model_best.pth"),
+    "trmteb/turkish-embedding-model-fine-tuned",
     "emrecan/bert-base-turkish-cased-mean-nli-stsb-tr",
     "ytu-ce-cosmos/turkish-e5-large",
     "ytu-ce-cosmos/modernbert-tr-embed",
@@ -30,6 +35,7 @@ MODEL_NAMES: List[Union[str, Path]] = [
     "google-bert/bert-base-multilingual-cased",
     "google-bert/bert-base-uncased",
     "dbmdz/bert-base-turkish-cased",
+    "dbmdz/bert-base-turkish-uncased",
 ]
 
 
@@ -143,22 +149,49 @@ def evaluate_all_and_print(
     sentences2: List[str],
     scores: List[float],
     max_model_len: int,
+    dataset_name: str,
 ) -> None:
     results: Dict[str, Dict[str, float]] = dict()
 
-    for model_name in MODEL_NAMES:
-        name: str
-        if isinstance(model_name, Path):
-            name = model_name.parent.name
-        else:
-            name = model_name
+    cache_path: Path = Path("output/validation_cache") / f"{dataset_name}.json"
+    cache: Dict[str, Dict[str, float]] = dict()
+    if cache_path.exists():
+        cache = json.loads(cache_path.read_text())
+    cache_updated: bool = False
 
-        results[name] = evaluate_model(
-            sentences1=sentences1,
-            sentences2=sentences2,
-            scores=scores,
-            model_name=model_name,
-        )
+    try:
+        for model_name in MODEL_NAMES:
+            name: str
+            if isinstance(model_name, Path):
+                name = model_name.parent.name
+            else:
+                name = model_name
+
+            key: str = str(model_name)
+            if key in cache:
+                print(f"Loaded from cache: {model_name}")
+                results[name] = cache[key]
+                continue
+
+            metrics: Dict[str, float] = evaluate_model(
+                sentences1=sentences1,
+                sentences2=sentences2,
+                scores=scores,
+                model_name=model_name,
+            )
+            cache[key] = {k: float(v) for k, v in metrics.items()}
+            cache_updated = True
+            results[name] = cache[key]
+    finally:
+        if cache_updated:
+            cache_path.parent.mkdir(
+                exist_ok=True,
+                parents=True,
+            )
+            cache_path.write_text(json.dumps(
+                cache,
+                indent=4,
+            ))
 
     print_results_table(
         results,

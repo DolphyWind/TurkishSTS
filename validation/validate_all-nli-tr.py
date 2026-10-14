@@ -18,6 +18,7 @@ def main():
         sentences2=sentences2,
         scores=scores,
         max_model_len=25,
+        dataset_name="all-nli-tr",
     )
 
 

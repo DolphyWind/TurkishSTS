@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 
 
-def infonce_loss(
+def infonce_loss_func(
     *,
     anchors: torch.Tensor,
     positives: torch.Tensor,

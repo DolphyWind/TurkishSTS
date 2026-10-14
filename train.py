@@ -18,7 +18,7 @@ from tqdm import tqdm
 
 from config import DataConfig, ModelConfig, MonitoringConfig, TrainConfig, parse_args
 from dataset import SentenceDataset, load_and_merge, simple_collate_fn
-from loss import dcl_loss, off_dropout_infonce_loss
+from loss import dcl_loss, off_dropout_infonce_loss, infonce_loss_func
 from lr_scheduler import LinearWarmupCosineDecay
 from metrics import MetricLogger
 from mlflow_logger import MLFlowLogger, NullLogger
@@ -357,30 +357,46 @@ class Trainer:
                 with dropout_set_to(self.model, False):
                     z_off: torch.Tensor = self.model(**anchors_pt)
 
-                z1 = z1 + randn_like(
-                    z1,
-                    mean=self.train_config.noise_mean,
-                    var=self.train_config.noise_var,
-                )
-                z2 = z2 + randn_like(
-                    z2,
-                    mean=self.train_config.noise_mean,
-                    var=self.train_config.noise_var,
-                )
+                infonce_loss: torch.Tensor
+                dcl: torch.Tensor
+                loss: torch.Tensor
 
-                infonce_loss: torch.Tensor = off_dropout_infonce_loss(
-                    anchors=z1,
-                    positives=z2,
-                    off_dropout=z_off,
-                    temperature=self.train_config.infonce_temp,
-                    m=self.train_config.tradeoff_ratio,
-                )
-                dcl: torch.Tensor = dcl_loss(
-                    anchors=z1,
-                    positives=z2,
-                    temperature=self.train_config.dcl_temp,
-                )
-                loss = infonce_loss + self.train_config.dcl_coefficient * dcl
+                if self.train_config.methodology == "simcse++":
+                    z1 = z1 + randn_like(
+                        z1,
+                        mean=self.train_config.noise_mean,
+                        var=self.train_config.noise_var,
+                    )
+                    z2 = z2 + randn_like(
+                        z2,
+                        mean=self.train_config.noise_mean,
+                        var=self.train_config.noise_var,
+                    )
+
+                    infonce_loss = off_dropout_infonce_loss(
+                        anchors=z1,
+                        positives=z2,
+                        off_dropout=z_off,
+                        temperature=self.train_config.infonce_temp,
+                        m=self.train_config.tradeoff_ratio,
+                    )
+                    dcl = dcl_loss(
+                        anchors=z1,
+                        positives=z2,
+                        temperature=self.train_config.dcl_temp,
+                    )
+                    loss = infonce_loss + self.train_config.dcl_coefficient * dcl
+                elif self.train_config.methodology == "simcse":
+                    infonce_loss = infonce_loss_func(
+                        anchors=z1,
+                        positives=z2,
+                        temperature=self.train_config.infonce_temp,
+                    )
+                    dcl = torch.Tensor([0])
+                    loss = infonce_loss
+                else:
+                    # Gets rid of pyright's possibly unbound errors
+                    raise RuntimeError("Unreachable.")
 
                 if mode == 'train':
                     self.accelerator.backward(loss)

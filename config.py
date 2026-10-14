@@ -76,6 +76,10 @@ class TrainConfig:
         default=False,
         metadata={"help": "Use deterministic CUDA operations."},
     )
+    methodology: Literal["simcse", "simcse++"] = field(
+        default="simcse++",
+        metadata={"help": "Methodology to use. Default: SimCSE++"},
+    )
 
 
 @dataclass
