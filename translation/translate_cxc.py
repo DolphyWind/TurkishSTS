@@ -53,7 +53,7 @@ def main():
 
     for split in agg_dataset.keys():
         dataset = agg_dataset[split]
-        out_path: Path = data_folder / f"cxc-{split}.jsonl"
+        out_path: Path = data_folder / f"cxc-mt-turkish-{split}.jsonl"
         done: int = 0
         if out_path.exists():
             with open(

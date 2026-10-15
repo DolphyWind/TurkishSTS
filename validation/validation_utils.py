@@ -26,6 +26,7 @@ MODEL_NAMES: List[Union[str, Path]] = [
     Path("./output/turkish_sts/ablation_regular_sampler/model_best.pth"),
     Path("./output/turkish_sts/ablation_low_p_value/model_best.pth"),
     Path("./output/turkish_sts/ablation_uncased/model_best.pth"),
+    Path("./output/turkish_sts/ablation_simcse/model_best.pth"),
     Path("./output/turkish_sts/ablation_emrecan/model_best.pth"),
     "trmteb/turkish-embedding-model-fine-tuned",
     "emrecan/bert-base-turkish-cased-mean-nli-stsb-tr",

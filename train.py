@@ -380,23 +380,22 @@ class Trainer:
                         temperature=self.train_config.infonce_temp,
                         m=self.train_config.tradeoff_ratio,
                     )
-                    dcl = dcl_loss(
-                        anchors=z1,
-                        positives=z2,
-                        temperature=self.train_config.dcl_temp,
-                    )
-                    loss = infonce_loss + self.train_config.dcl_coefficient * dcl
                 elif self.train_config.methodology == "simcse":
                     infonce_loss = infonce_loss_func(
                         anchors=z1,
                         positives=z2,
                         temperature=self.train_config.infonce_temp,
                     )
-                    dcl = torch.Tensor([0])
-                    loss = infonce_loss
                 else:
                     # Gets rid of pyright's possibly unbound errors
                     raise RuntimeError("Unreachable.")
+
+                dcl = dcl_loss(
+                    anchors=z1,
+                    positives=z2,
+                    temperature=self.train_config.dcl_temp,
+                )
+                loss = infonce_loss + self.train_config.dcl_coefficient * dcl
 
                 if mode == 'train':
                     self.accelerator.backward(loss)
