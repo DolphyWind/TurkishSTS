@@ -44,6 +44,8 @@ def pick_subset(
 ) -> Subset:
     if data_size < 0.0 or data_size > len(dataset):
         raise RuntimeError("Invalid data size!")
+    if data_size == 1.0:
+        return Subset(dataset, range(len(dataset)))
     if data_size > 1.0:
         data_size = int(data_size)
     else:
