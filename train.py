@@ -1,5 +1,6 @@
 from contextlib import nullcontext
 from dataclasses import asdict
+import math
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Union
@@ -7,7 +8,6 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from accelerate import Accelerator
 from accelerate.utils import DataLoaderConfiguration, set_seed
 from datasets import Dataset as HFDataset
-import mlflow
 import numpy as np
 from peft import TaskType
 from transformers import PreTrainedTokenizerBase
@@ -21,7 +21,6 @@ from dataset import SentenceDataset, load_and_merge, simple_collate_fn
 from loss import dcl_loss, off_dropout_infonce_loss, infonce_loss_func
 from lr_scheduler import LinearWarmupCosineDecay
 from metrics import MetricLogger
-from mlflow_logger import MLFlowLogger, NullLogger
 from model import STSModel
 from samplers import NearFarSampler
 from util import dropout_set_to, pick_subset, randn_like
@@ -78,7 +77,7 @@ class Trainer:
         self._seed()
 
         self.model: STSModel = STSModel(
-            base_model=model_config.base_model,
+            base_model_name=model_config.base_model,
             initialize_new=model_config.initialize_new,
             lora=model_config.lora,
             lora_config={
@@ -128,6 +127,7 @@ class Trainer:
                 shuffle=True,
                 collate_fn=simple_collate_fn,
                 pin_memory=True,
+                drop_last=(len(self.val_dataset) % train_config.batch_size < 16),
             )
 
         self.optimizer: optim.Optimizer = optim.AdamW(
@@ -138,7 +138,6 @@ class Trainer:
         self.lr_scheduler: Optional[optim.lr_scheduler.LRScheduler] = None
         match train_config.lr_scheduler:
             case "linear_warmup_cos_decay":
-                import math
                 total_steps: int = math.ceil(
                     self.train_dataset.__len__() / train_config.batch_size
                 ) * train_config.num_epochs
@@ -193,7 +192,7 @@ class Trainer:
                     ),
                 )
 
-    def train(self):
+    def train(self) -> None:
         metric_logger = MetricLogger(
             is_main_process=self.accelerator.is_main_process,
             experiment_name=self.monitoring_config.experiment_name,
@@ -266,7 +265,7 @@ class Trainer:
             finally:
                 metric_logger.stop()
 
-    def _initialize_sampler_and_loader(self):
+    def _initialize_sampler_and_loader(self) -> None:
         match self.data_config.sampler_to_use:
             case "near_far":
                 self.train_sampler = NearFarSampler(
@@ -276,6 +275,7 @@ class Trainer:
                     max_epochs=self.train_config.num_epochs,
                     min_p=self.data_config.min_p,
                     max_p=self.data_config.max_p,
+                    drop_last=(len(self.train_dataset) % self.train_config.batch_size < 16),
                 )
                 self.train_loader = DataLoader(
                     self.train_dataset,
@@ -290,9 +290,10 @@ class Trainer:
                     shuffle=True,
                     collate_fn=simple_collate_fn,
                     pin_memory=True,
+                    drop_last=(len(self.train_dataset) % self.train_config.batch_size < 16),
                 )
 
-    def _seed(self):
+    def _seed(self) -> None:
         if self.seed is None:
             return
 

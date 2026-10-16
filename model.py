@@ -16,14 +16,14 @@ from transformers import (
 class STSModel(nn.Module):
     def __init__(
         self,
-        base_model: str,
+        base_model_name: str,
         initialize_new: bool = False,
         lora: bool = False,
         lora_config: Optional[Dict[str, Any]] = None,
     ) -> None:
         super().__init__()
 
-        self.base_model_name: str = base_model
+        self.base_model_name: str = base_model_name
         self.initialize_new: bool = initialize_new
         self.use_lora: bool = lora
         self.lora_config: Optional[LoraConfig] = LoraConfig(**lora_config) if lora_config else None
@@ -50,12 +50,12 @@ class STSModel(nn.Module):
         self,
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
-        token_type_ids: torch.Tensor,
+        **kwargs,
     ) -> torch.Tensor:
         out = self.base(
             input_ids=input_ids,
             attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
+            **kwargs,
         )
         return self._mean_pooling(out, attention_mask)
 

@@ -13,8 +13,8 @@ def main():
 
     splits = cxc_dataset.train_test_split(test_size=0.2, seed=SEED)
 
-    splits["train"].to_parquet(data_folder / "cxc-mt-turkish-80-20-split-train.parquet")
-    splits["test"].to_parquet(data_folder / "cxc-mt-turkish-80-20-split-val.parquet")
+    splits["train"].to_json(data_folder / "cxc-mt-turkish-80-20-split-train.jsonl", orient="records", lines=True)
+    splits["test"].to_json(data_folder / "cxc-mt-turkish-80-20-split-val.jsonl", orient="records", lines=True)
 
 
 if __name__ == '__main__':

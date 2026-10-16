@@ -27,6 +27,7 @@ MODEL_NAMES: List[Union[str, Path]] = [
     Path("./output/turkish_sts/ablation_low_p_value/model_best.pth"),
     Path("./output/turkish_sts/ablation_uncased/model_best.pth"),
     Path("./output/turkish_sts/ablation_simcse/model_best.pth"),
+    Path("./output/turkish_sts/ablation_simcse_with_dsl/model_best.pth"),
     Path("./output/turkish_sts/ablation_emrecan/model_best.pth"),
     "trmteb/turkish-embedding-model-fine-tuned",
     "emrecan/bert-base-turkish-cased-mean-nli-stsb-tr",
@@ -100,7 +101,7 @@ def evaluate_model(
         saved: Dict[str, Any] = json.loads(config_path.read_text())
         model_config: ModelConfig = ModelConfig(**saved["model_config"])
         sts_model: STSModel = STSModel(
-            base_model=model_config.base_model,
+            base_model_name=model_config.base_model,
             initialize_new=model_config.initialize_new,
             lora=model_config.lora,
             lora_config={

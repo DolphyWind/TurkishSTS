@@ -1,6 +1,6 @@
 import atexit
 from threading import Thread, Event
-from typing import Any, Optional, TypeVar, Iterator
+from typing import Any, List, Optional, TypeVar, Iterator
 import mlflow
 from queue import Queue
 
@@ -8,7 +8,7 @@ from queue import Queue
 T = TypeVar("T")
 
 
-def repeat_last(lst: list[T]) -> Iterator[T]:
+def repeat_last(lst: List[T]) -> Iterator[T]:
     if not lst:
         return
     for item in lst:
@@ -18,7 +18,7 @@ def repeat_last(lst: list[T]) -> Iterator[T]:
 
 
 class MLFlowLogger:
-    def __init__(self, run_id: Optional[str]):
+    def __init__(self, run_id: Optional[str]) -> None:
         self.run_id = run_id
         self.__queue: Queue = Queue()
         self.__stop_event: Event = Event()
@@ -29,13 +29,13 @@ class MLFlowLogger:
         self.__main_thread.start()
         atexit.register(self.stop)
 
-    def log_param(self, name: str, value: Any, **kwargs):
+    def log_param(self, name: str, value: Any, **kwargs) -> None:
         self.__queue.put(lambda: mlflow.log_param(name, value, **kwargs))
 
-    def log_metric(self, key: str, value: float, **kwargs):
+    def log_metric(self, key: str, value: float, **kwargs) -> None:
         self.__queue.put(lambda: mlflow.log_metric(key=key, value=value, **kwargs))
 
-    def __mainloop(self):
+    def __mainloop(self) -> None:
         while True:
             task = self.__queue.get()
             if task is None or self.__stop_event.is_set():
@@ -58,7 +58,7 @@ class MLFlowLogger:
                     break
             self.__queue.task_done()
 
-    def stop(self, timeout: Optional[float] = 60.0):
+    def stop(self, timeout: Optional[float] = 60.0) -> None:
         if not self.__main_thread.is_alive():
             return
         self.__queue.put(None)
@@ -69,14 +69,14 @@ class MLFlowLogger:
 
 
 class NullLogger:
-    def __init__(self, _=None):
+    def __init__(self, _=None) -> None:
         self.run_id: Optional[str] = None
 
-    def log_param(self, *args, **kwargs):
+    def log_param(self, *args, **kwargs) -> None:
         pass
 
-    def log_metric(self, *args, **kwargs):
+    def log_metric(self, *args, **kwargs) -> None:
         pass
 
-    def stop(self):
+    def stop(self) -> None:
         pass

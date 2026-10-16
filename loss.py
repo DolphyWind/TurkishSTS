@@ -72,7 +72,8 @@ def dcl_loss(
     a = _standardize(anchors)
     p = _standardize(positives)
 
-    temperature = temperature * (anchors.size(0) - 1) / 63.0  # Here as an attempt to make temperature scale with batch size
+    # Here as an attempt to make temperature scale with batch size
+    temperature = temperature * (anchors.size(0) - 1) / 63.0
 
     logits: torch.Tensor = (a.T @ p).float() / temperature
     targets: torch.Tensor = torch.arange(

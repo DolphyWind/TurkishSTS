@@ -53,7 +53,7 @@ class NearFarSampler(Sampler[List[int]]):
 
         flat: List[int] = idx.tolist()
         for i in range(len(self)):
-            yield flat[i * self.batch_size : (i + 1) * self.batch_size]
+            yield flat[(i * self.batch_size):(i + 1) * self.batch_size]
 
     def load_state_dict(self, state: Dict[str, Any]):
         self.min_p = state["min_p"]

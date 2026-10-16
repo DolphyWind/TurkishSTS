@@ -109,6 +109,6 @@ class MetricLogger:
                     **self.metrics[step]
                 })
 
-    def stop(self):
+    def stop(self) -> None:
         self.mlflow_logger.stop()
         self.write_to_disk()

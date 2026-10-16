@@ -1,11 +1,13 @@
 from contextlib import contextmanager
-from typing import Optional, Union
+from typing import List, Optional, Union
 
 import numpy as np
 import numpy.typing as npt
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, Subset
+from torch.utils.data import Subset
+
+from dataset import SentenceDataset
 
 
 @contextmanager
@@ -13,15 +15,16 @@ def dropout_set_to(
     model: nn.Module,
     dropout_state: bool,
 ):
-    mods = [mod for mod in model.modules() if isinstance(mod, nn.Dropout)]
-    was_training = [mod.training for mod in mods]
+    # Set training=False for all modules because some "geniuses" decided to use nn.functional.dropout
+    mods: List[nn.Module] = [mod for mod in model.modules()]
+    was_training: List[bool] = [mod.training for mod in mods]
     for mod in mods:
-        mod.train(dropout_state)
+        mod.training = dropout_state
     try:
         yield
     finally:
         for mod, flag in zip(mods, was_training):
-            mod.train(flag)
+            mod.training = flag
 
 
 def randn_like(
@@ -35,7 +38,7 @@ def randn_like(
 
 
 def pick_subset(
-    dataset: Dataset,
+    dataset: SentenceDataset,
     data_size: float,
     generator: Optional[np.random.Generator] = None,
 ) -> Subset:
@@ -49,8 +52,17 @@ def pick_subset(
     if generator is None:
         generator = np.random.default_rng()
 
-    idx: npt.NDArray = np.arange(0, len(dataset))
-    generator.shuffle(idx)
+    sources: npt.NDArray = np.asarray(dataset.hf_dataset["source"])
+    group_ids: npt.NDArray
+    _, group_ids = np.unique(
+        sources,
+        return_inverse=True,
+    )
+    group_rank: npt.NDArray = generator.permutation(group_ids.max() + 1)
+    idx: npt.NDArray = np.argsort(
+        group_rank[group_ids],
+        kind="stable",
+    )
     idx = idx[:data_size]
 
     return Subset(dataset, idx)
