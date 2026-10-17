@@ -8,7 +8,6 @@ from torch.utils.data import Dataset
 def load_and_merge(
     files: List[Path],
 ) -> HFDataset:
-
     segments: Dict[str, str] = {
         fname.stem.replace("-", "_"): fname.__str__()
         for fname in files

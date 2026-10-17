@@ -9,6 +9,7 @@ dependencies = [
     "bitsandbytes>=0.50.2",
     "datasets>=5.0.1",
     "mlflow>=3.16.1",
+    "mteb>=2.26.5",
     "numpy>=2.5.3",
     "pandas>=3.0.5",
     "peft>=0.21.0",

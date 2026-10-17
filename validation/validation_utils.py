@@ -3,6 +3,7 @@ from pathlib import Path
 import sys
 import tempfile
 from typing import Any, Dict, List, Set, Union
+from mteb import TaskResult
 from peft import PeftModel, TaskType
 from sentence_transformers import SentenceTransformer
 from sentence_transformers.sentence_transformer.evaluation import EmbeddingSimilarityEvaluator
@@ -29,6 +30,7 @@ MODEL_NAMES: List[Union[str, Path]] = [
     Path("./output/turkish_sts/ablation_simcse/model_best.pth"),
     Path("./output/turkish_sts/ablation_simcse_with_dsl/model_best.pth"),
     Path("./output/turkish_sts/ablation_fix_sampler/model_best.pth"),
+    Path("./output/turkish_sts/ablation_fix_sampler_two/model_best.pth"),
     Path("./output/turkish_sts/ablation_emrecan/model_best.pth"),
     "trmteb/turkish-embedding-model-fine-tuned",
     "emrecan/bert-base-turkish-cased-mean-nli-stsb-tr",
@@ -80,15 +82,10 @@ def print_results_table(
     print("-" * row_len)
 
 
-def evaluate_model(
-    sentences1: List[str],
-    sentences2: List[str],
-    scores: List[float],
+def load_sentence_transformer(
     model_name: Union[str, Path],
-) -> Dict[str, float]:
-    print(f"Processing: {model_name}")
-    device: str = "cuda" if torch.cuda.is_available() else "cpu"
-
+    device: str,
+) -> SentenceTransformer:
     model: SentenceTransformer
     if isinstance(model_name, str):
         model = SentenceTransformer(
@@ -136,6 +133,22 @@ def evaluate_model(
                 device=device,
             )
 
+    return model
+
+
+def evaluate_model(
+    sentences1: List[str],
+    sentences2: List[str],
+    scores: List[float],
+    model_name: Union[str, Path],
+) -> Dict[str, float]:
+    print(f"Processing: {model_name}")
+    device: str = "cuda" if torch.cuda.is_available() else "cpu"
+    model: SentenceTransformer = load_sentence_transformer(
+        model_name,
+        device,
+    )
+
     evaluator: EmbeddingSimilarityEvaluator = EmbeddingSimilarityEvaluator(
         sentences1=sentences1,
         sentences2=sentences2,
@@ -145,6 +158,83 @@ def evaluate_model(
     )
 
     return evaluator(model)
+
+
+def evaluate_mteb_tr(
+    model_name: Union[str, Path],
+    mteb_out_folder: Path,
+) -> List[TaskResult]:
+    import mteb
+    from mteb import MTEB
+
+    print(f"Processing: {model_name}")
+    device: str = "cuda" if torch.cuda.is_available() else "cpu"
+    mteb_tr = mteb.get_benchmark("MTEB(Turkish)")
+    model: SentenceTransformer = load_sentence_transformer(
+        model_name,
+        device,
+    )
+    evaluation = MTEB(tasks=mteb_tr)
+    return evaluation.run(model, output_folder=str(mteb_out_folder))
+
+
+def evaluate_all_mteb_tr(
+    max_model_len: int,
+) -> None:
+    project_base: Path = Path(__file__).parent.parent
+    raw_out_folder: Path = project_base / "output/mteb_raw_out/"
+    raw_out_folder.mkdir(parents=True, exist_ok=True)
+
+    out_folder: Path = project_base / "output/mteb_out/"
+    out_folder.mkdir(parents=True, exist_ok=True)
+
+    results: Dict[str, Dict[str, float]] = dict()
+
+    cache_path: Path = out_folder / "mteb_tr.json"
+    cache: Dict[str, Dict[str, float]] = dict()
+    if cache_path.exists():
+        cache = json.loads(cache_path.read_text())
+    cache_updated: bool = False
+
+    try:
+        for model_name in MODEL_NAMES:
+            name: str
+            if isinstance(model_name, Path):
+                name = model_name.parent.name
+            else:
+                name = model_name
+
+            key: str = str(model_name)
+            if key in cache:
+                print(f"Loaded from cache: {model_name}")
+                results[name] = cache[key]
+                continue
+
+            task_results: List[TaskResult] = evaluate_mteb_tr(
+                model_name=model_name,
+                mteb_out_folder=raw_out_folder / name,
+            )
+            sorted_results: List[TaskResult] = sorted(
+                task_results,
+                key=lambda task_result: task_result.task_name,
+            )
+            cache[key] = {
+                task_result.task_name: float(task_result.get_score())
+                for task_result in sorted_results
+            }
+            cache_updated = True
+            results[name] = cache[key]
+    finally:
+        if cache_updated:
+            cache_path.write_text(json.dumps(
+                cache,
+                indent=4,
+            ))
+
+    print_results_table(
+        results,
+        max_model_len,
+    )
 
 
 def evaluate_all_and_print(
