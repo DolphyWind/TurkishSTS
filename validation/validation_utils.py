@@ -36,9 +36,6 @@ MODEL_NAMES: List[Union[str, Path]] = [
     "emrecan/bert-base-turkish-cased-mean-nli-stsb-tr",
     "ytu-ce-cosmos/turkish-e5-large",
     "ytu-ce-cosmos/modernbert-tr-embed",
-    "atasoglu/turkish-e5-large-m2v",
-    "google-bert/bert-base-multilingual-cased",
-    "google-bert/bert-base-uncased",
     "dbmdz/bert-base-turkish-cased",
     "dbmdz/bert-base-turkish-uncased",
 ]
