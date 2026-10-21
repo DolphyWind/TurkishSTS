@@ -1,5 +1,7 @@
 import json
+import os
 from pathlib import Path
+import sys
 import tempfile
 from typing import Any, Dict, Union
 
@@ -11,7 +13,7 @@ from sentence_transformers import (
 )
 from sentence_transformers.sentence_transformer import losses
 from sentence_transformers.sentence_transformer.modules import Pooling, Transformer
-from datasets import Dataset
+from datasets import Dataset, load_dataset
 import torch
 
 from config import ModelConfig
@@ -61,10 +63,17 @@ def load_model(model_name: Union[str, Path]) -> SentenceTransformer:
 
 
 def main():
+    if os.environ.get("MLFLOW_EXPERIMENT_NAME", None) is None:
+        print("Please set 'MLFLOW_EXPERIMENT_NAME' variable!", file=sys.stderr)
+        exit(1)
+
     model_name: Union[str, Path] = ""
     model: SentenceTransformer = load_model(model_name)
-    dataset = None  # Implement later
-    eval_dataset = None  # Implement later
+
+    dataset = load_dataset("DolphyWind/Mixed-STS-tr")
+    dataset = dataset.remove_columns("original_source")
+    train_dataset = dataset["train"]
+    eval_dataset = dataset["validation"]
 
     train_loss = losses.AnglELoss(model=model)
 
@@ -97,7 +106,7 @@ def main():
     trainer: SentenceTransformerTrainer = SentenceTransformerTrainer(
         model=model,
         args=args,
-        train_dataset=dataset,
+        train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         loss=train_loss,
     )
