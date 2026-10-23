@@ -3,10 +3,9 @@ from collections import defaultdict
 from contextlib import nullcontext
 from dataclasses import asdict
 from pathlib import Path
-from typing import DefaultDict, Dict, List, Optional, Union
+from typing import DefaultDict, Dict, List, Optional
 
 import mlflow
-from mlflow_logger import MLFlowLogger, NullLogger
 
 
 class MetricLogger:
@@ -19,7 +18,6 @@ class MetricLogger:
         out_dir: Path,
     ) -> None:
         self.is_main_process: bool = is_main_process
-        self.mlflow_logger: Union[MLFlowLogger, NullLogger] = NullLogger()
         self.out_path: Path = out_dir / "metrics.csv"
 
         self.experiment_name: str = experiment_name
@@ -33,7 +31,6 @@ class MetricLogger:
                 run_name=run_name,
                 run_id=self.run_id,
             )
-            self.mlflow_logger = MLFlowLogger(run_id=self.run_id)
 
         self.metrics: DefaultDict[int, Dict[str, float]] = defaultdict(dict)
         self.load_metrics()
@@ -43,7 +40,6 @@ class MetricLogger:
             return
 
         self.run_id = run_id
-        self.mlflow_logger.run_id = run_id
 
     def load_metrics(self) -> None:
         if not self.is_main_process or not self.out_path.exists():
@@ -66,8 +62,10 @@ class MetricLogger:
         if not self.is_main_process or self.run_id is not None:
             return
 
-        for k, v in asdict(cfg).items():
-            self.mlflow_logger.log_param(k, v)
+        mlflow.log_params(
+            asdict(cfg),
+            synchronous=False,
+        )
 
     def log_metric(
         self,
@@ -79,10 +77,11 @@ class MetricLogger:
         if not self.is_main_process:
             return
 
-        self.mlflow_logger.log_metric(
+        mlflow.log_metric(
             name,
             value,
             step=step,
+            synchronous=False,
             **kwargs,
         )
         self.metrics[step][name] = value
@@ -110,5 +109,6 @@ class MetricLogger:
                 })
 
     def stop(self) -> None:
-        self.mlflow_logger.stop()
+        if self.is_main_process:
+            mlflow.flush_async_logging()
         self.write_to_disk()
