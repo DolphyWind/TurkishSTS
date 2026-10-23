@@ -28,7 +28,7 @@ class LinearWarmupCosineDecay(LRScheduler):
         super().__init__(optimizer, last_epoch)
 
     def get_lr(self) -> List[float]:
-        step: int = self.last_epoch + 1
+        step: int = self.last_epoch
         lrs: List[float] = []
 
         for base_lr in self.base_lrs:
@@ -38,10 +38,7 @@ class LinearWarmupCosineDecay(LRScheduler):
             safe_warmup_steps = max(1, self.warmup_steps)
             safe_decay_steps = max(1, self.decay_steps)
             if step < self.warmup_steps:
-                if self.warmup_steps == 0:
-                    lr = base_lr
-                else:
-                    lr = start_lr + (base_lr - start_lr) * (step / safe_warmup_steps)
+                lr = start_lr + (base_lr - start_lr) * (step / safe_warmup_steps)
             else:
                 decay_step: int = min(step - self.warmup_steps, self.decay_steps)
                 cosine: float = 0.5 * (1.0 + math.cos(math.pi * decay_step / safe_decay_steps))

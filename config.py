@@ -80,6 +80,10 @@ class TrainConfig:
         default="simcse++",
         metadata={"help": "Methodology to use. Default: SimCSE++"},
     )
+    log_interval: int = field(
+        default=50,
+        metadata={"help": "Number of steps between progress bar updates."},
+    )
 
 
 @dataclass
@@ -111,6 +115,10 @@ class DataConfig:
     val_size: float = field(
         default=1.0,
         metadata={"help": "Percentage or number of datapoints to be used. Float values are treated as percentage. Doesn't do anything if validation data does not exist."}  # noqa
+    )
+    num_workers: int = field(
+        default=4,
+        metadata={"help": "Number of DataLoader worker processes."},
     )
 
     def __post_init__(self) -> None:

@@ -17,7 +17,7 @@ from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 
 from config import DataConfig, ModelConfig, MonitoringConfig, TrainConfig, parse_args
-from dataset import SentenceDataset, load_and_merge, simple_collate_fn
+from dataset import SentenceDataset, TokenizingCollator, load_and_merge
 from loss import dcl_loss, off_dropout_infonce_loss, infonce_loss_func
 from lr_scheduler import LinearWarmupCosineDecay
 from metrics import MetricLogger
@@ -124,8 +124,9 @@ class Trainer:
             self.val_loader = DataLoader(
                 self.val_dataset,
                 batch_size=train_config.batch_size,
-                shuffle=True,
-                collate_fn=simple_collate_fn,
+                shuffle=False,
+                collate_fn=TokenizingCollator(self.model.tokenizer),
+                num_workers=self.data_config.num_workers,
                 pin_memory=True,
                 drop_last=(len(self.val_dataset) % train_config.batch_size < 16),
             )
@@ -134,6 +135,7 @@ class Trainer:
             self.model.parameters(),
             lr=train_config.lr_peak,
             weight_decay=train_config.weight_decay,
+            fused=True,
         )
         self.lr_scheduler: Optional[optim.lr_scheduler.LRScheduler] = None
         match train_config.lr_scheduler:
@@ -280,7 +282,8 @@ class Trainer:
                 self.train_loader = DataLoader(
                     self.train_dataset,
                     batch_sampler=self.train_sampler,
-                    collate_fn=simple_collate_fn,
+                    collate_fn=TokenizingCollator(self.model.tokenizer),
+                    num_workers=self.data_config.num_workers,
                     pin_memory=True,
                 )
             case "regular":
@@ -288,7 +291,8 @@ class Trainer:
                     self.train_dataset,
                     batch_size=self.train_config.batch_size,
                     shuffle=True,
-                    collate_fn=simple_collate_fn,
+                    collate_fn=TokenizingCollator(self.model.tokenizer),
+                    num_workers=self.data_config.num_workers,
                     pin_memory=True,
                     drop_last=(len(self.train_dataset) % self.train_config.batch_size < 16),
                 )
@@ -329,31 +333,44 @@ class Trainer:
 
         desc: str = "Epoch" if mode == 'train' else "Validation"
         loop.set_description_str(f"{desc} [{epoch_num}/{self.train_config.num_epochs}]")
-        total_loss: float = 0.0
-        total_infonce: float = 0.0
-        total_dcl: float = 0.0
-        losses: List[float] = []
-        infonce_losses: List[float] = []
-        dcl_losses: List[float] = []
+        total_loss: torch.Tensor = torch.zeros(
+            (),
+            device=self.device,
+        )
+        total_infonce: torch.Tensor = torch.zeros(
+            (),
+            device=self.device,
+        )
+        total_dcl: torch.Tensor = torch.zeros(
+            (),
+            device=self.device,
+        )
+        losses: List[torch.Tensor] = []
+        infonce_losses: List[torch.Tensor] = []
+        dcl_losses: List[torch.Tensor] = []
 
         grad_ctx = nullcontext() if mode == 'train' else torch.no_grad()
-        with grad_ctx:
-            for i, (anchors,) in enumerate(loop, start=1):
-                anchors_pt = self.tokenizer(
-                    anchors,
-                    return_tensors="pt",
-                    padding=True,
-                    truncation=True,
-                )
-
-                anchors_pt = anchors_pt.to(self.device)
-
+        rng_ctx = nullcontext()
+        if mode == 'val':
+            rng_ctx = torch.random.fork_rng(
+                devices=[self.device] if self.device.type == "cuda" else [],
+            )
+        with grad_ctx, rng_ctx:
+            if mode == 'val':
+                torch.manual_seed(self.seed or 0)
+            for i, anchors_pt in enumerate(loop, start=1):
                 if mode == 'train':
                     self.optimizer.zero_grad()
 
+                doubled_pt: Dict[str, torch.Tensor] = {
+                    key: torch.cat([value, value])
+                    for key, value in anchors_pt.items()
+                }
+
+                z1_orig: torch.Tensor
+                z2_orig: torch.Tensor
                 with dropout_set_to(self.model, True):
-                    z1: torch.Tensor = self.model(**anchors_pt)
-                    z2: torch.Tensor = self.model(**anchors_pt)
+                    z1_orig, z2_orig = self.model(**doubled_pt).chunk(2)
 
                 with dropout_set_to(self.model, False):
                     z_off: torch.Tensor = self.model(**anchors_pt)
@@ -363,13 +380,13 @@ class Trainer:
                 loss: torch.Tensor
 
                 if self.train_config.methodology == "simcse++":
-                    z1 = z1 + randn_like(
-                        z1,
+                    z1: torch.Tensor = z1_orig + randn_like(
+                        z1_orig,
                         mean=self.train_config.noise_mean,
                         var=self.train_config.noise_var,
                     )
-                    z2 = z2 + randn_like(
-                        z2,
+                    z2: torch.Tensor = z2_orig + randn_like(
+                        z2_orig,
                         mean=self.train_config.noise_mean,
                         var=self.train_config.noise_var,
                     )
@@ -383,8 +400,8 @@ class Trainer:
                     )
                 elif self.train_config.methodology == "simcse":
                     infonce_loss = infonce_loss_func(
-                        anchors=z1,
-                        positives=z2,
+                        anchors=z1_orig,
+                        positives=z2_orig,
                         temperature=self.train_config.infonce_temp,
                     )
                 else:
@@ -392,8 +409,8 @@ class Trainer:
                     raise RuntimeError("Unreachable.")
 
                 dcl = dcl_loss(
-                    anchors=z1,
-                    positives=z2,
+                    anchors=z1_orig,
+                    positives=z2_orig,
                     temperature=self.train_config.dcl_temp,
                 )
                 loss = infonce_loss + self.train_config.dcl_coefficient * dcl
@@ -404,26 +421,36 @@ class Trainer:
                     if self.lr_scheduler:
                         self.lr_scheduler.step()
 
-                loss_float: float = loss.item()
-                infonce_float: float = infonce_loss.item()
-                dcl_float: float = dcl.item() * self.train_config.dcl_coefficient
-                total_loss += loss_float
-                total_infonce += infonce_float
-                total_dcl += dcl_float
+                loss_detached: torch.Tensor = loss.detach()
+                infonce_detached: torch.Tensor = infonce_loss.detach()
+                dcl_detached: torch.Tensor = dcl.detach() * self.train_config.dcl_coefficient
+                total_loss += loss_detached
+                total_infonce += infonce_detached
+                total_dcl += dcl_detached
 
-                losses.append(loss_float)
-                infonce_losses.append(infonce_float)
-                dcl_losses.append(dcl_float)
-                lr: float = self.optimizer.param_groups[0]["lr"]
-                loop.set_postfix(
-                    loss=loss_float,
-                    infonce=infonce_float,
-                    dcl=dcl_float,
-                    avg_loss=total_loss / i,
-                    avg_infonce=total_infonce / i,
-                    avg_dcl=total_dcl / i,
-                    lr=lr,
-                )
+                losses.append(loss_detached)
+                infonce_losses.append(infonce_detached)
+                dcl_losses.append(dcl_detached)
+
+                if i % self.train_config.log_interval == 0:
+                    synced: List[float] = torch.stack([
+                        loss_detached,
+                        infonce_detached,
+                        dcl_detached,
+                        total_loss,
+                        total_infonce,
+                        total_dcl,
+                    ]).tolist()
+                    lr: float = self.optimizer.param_groups[0]["lr"]
+                    loop.set_postfix(
+                        loss=synced[0],
+                        infonce=synced[1],
+                        dcl=synced[2],
+                        avg_loss=synced[3] / i,
+                        avg_infonce=synced[4] / i,
+                        avg_dcl=synced[5] / i,
+                        lr=lr,
+                    )
 
         metrics: Dict[str, float] = {}
         for name, values in (
@@ -431,10 +458,7 @@ class Trainer:
             ("infonce", infonce_losses),
             ("dcl", dcl_losses),
         ):
-            values_tensor: torch.Tensor = torch.tensor(
-                values,
-                device=self.device,
-            )
+            values_tensor: torch.Tensor = torch.stack(values)
             values_gathered: torch.Tensor = self.accelerator.gather_for_metrics(values_tensor)
             metrics[name] = values_gathered.mean().item()
 

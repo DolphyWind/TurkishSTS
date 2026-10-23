@@ -3,6 +3,7 @@ from typing import Dict, List, Tuple
 from datasets import DatasetDict, load_dataset, concatenate_datasets
 from datasets import Dataset as HFDataset
 from torch.utils.data import Dataset
+from transformers import BatchEncoding, PreTrainedTokenizerBase
 
 
 def load_and_merge(
@@ -36,9 +37,29 @@ class SentenceDataset(Dataset):
         elem: Dict[str, str] = self.hf_dataset[index]
         return elem
 
+    def __getitems__(self, indices: List[int]) -> Dict[str, List[str]]:
+        return self.hf_dataset[indices]
+
 
 def simple_collate_fn(data: List[Dict[str, str]]) -> Tuple[List[str]]:
     batch: List[str] = []
     for anchor in data:
         batch.append(anchor["sentence"])
     return (batch,)
+
+
+class TokenizingCollator:
+    def __init__(
+        self,
+        tokenizer: PreTrainedTokenizerBase,
+    ) -> None:
+        self.tokenizer: PreTrainedTokenizerBase = tokenizer
+
+    def __call__(self, data: Dict[str, List[str]]) -> BatchEncoding:
+        return self.tokenizer(
+            data["sentence"],
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            pad_to_multiple_of=8,
+        )
