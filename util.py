@@ -1,13 +1,21 @@
 from contextlib import contextmanager
-from typing import List, Optional, Union
+import json
+from pathlib import Path
+import tempfile
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import numpy.typing as npt
+from peft import PeftModel, TaskType
+from sentence_transformers import SentenceTransformer
+from sentence_transformers.sentence_transformer.modules import Pooling, Transformer
 import torch
 import torch.nn as nn
 from torch.utils.data import Subset
 
+from config import ModelConfig
 from dataset import SentenceDataset
+from model import STSModel
 
 
 @contextmanager
@@ -68,3 +76,45 @@ def pick_subset(
     idx = idx[:data_size]
 
     return Subset(dataset, idx)
+
+
+def load_model(model_name: Union[str, Path]) -> SentenceTransformer:
+    if isinstance(model_name, str):
+        return SentenceTransformer(model_name)
+
+    config_path: Path = model_name.parent / "config.json"
+    if not config_path.exists():
+        raise FileNotFoundError(f"{config_path} does not exist.")
+    saved: Dict[str, Any] = json.loads(config_path.read_text())
+    model_config: ModelConfig = ModelConfig(**saved["model_config"])
+    sts_model: STSModel = STSModel(
+        base_model_name=model_config.base_model,
+        initialize_new=model_config.initialize_new,
+        lora=model_config.lora,
+        lora_config={
+            "r": model_config.lora_r,
+            "lora_alpha": model_config.lora_alpha,
+            "lora_dropout": model_config.lora_dropout,
+            "bias": "none",
+            "task_type": TaskType.FEATURE_EXTRACTION,
+            "target_modules": model_config.lora_target_modules,
+            "modules_to_save": model_config.lora_modules_to_save,
+        },
+    )
+    state_dict: Dict[str, torch.Tensor] = torch.load(
+        model_name,
+        map_location="cpu",
+    )
+    sts_model.load_state_dict(state_dict)
+    if isinstance(sts_model.base, PeftModel):
+        sts_model.base = sts_model.base.merge_and_unload()
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        sts_model.base.save_pretrained(tmp_dir)
+        sts_model.tokenizer.save_pretrained(tmp_dir)
+        transformer: Transformer = Transformer(tmp_dir)
+        pooling: Pooling = Pooling(
+            transformer.get_embedding_dimension(),
+            "mean",
+        )
+        return SentenceTransformer(modules=[transformer, pooling])
