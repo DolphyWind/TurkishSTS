@@ -19,27 +19,35 @@ from config import ModelConfig  # noqa: E402
 from model import STSModel  # noqa: E402
 
 
+BASE_PATH: str = "/run/media/yunus/HDD_5TB/results/TurkishSentenceSimilarity/"
+
+
+# TODO: Three different dataclasses for;
+#  - Custom model (Ones ending with model_best.pth)
+#  - Custom model trained with HF trainers and therefore use HF's save method
+#  - Models from hf
 MODEL_NAMES: List[Union[str, Path]] = [
-    Path("./output/turkish_sts/colab_test_2/model_best.pth"),
-    Path("./output/turkish_sts/ablation_regular_run/model_best.pth"),
-    Path("./output/turkish_sts/ablation_no_dsl/model_best.pth"),
-    Path("./output/turkish_sts/ablation_1M_no_dsl/model_best.pth"),
-    Path("./output/turkish_sts/ablation_regular_sampler/model_best.pth"),
-    Path("./output/turkish_sts/ablation_low_p_value/model_best.pth"),
-    Path("./output/turkish_sts/ablation_uncased/model_best.pth"),
-    Path("./output/turkish_sts/ablation_simcse/model_best.pth"),
-    Path("./output/turkish_sts/ablation_simcse_with_dsl/model_best.pth"),
-    Path("./output/turkish_sts/ablation_fix_sampler/model_best.pth"),
-    Path("./output/turkish_sts/ablation_fix_sampler_two/model_best.pth"),
-    Path("./output/turkish_sts/ablation_emrecan/model_best.pth"),
-    Path("./output/turkish_sts/improved_100K_with_dcl_cased/model_best.pth"),
-    Path("./output/turkish_sts/improved_100K_without_dcl_cased/model_best.pth"),
-    "output/turkish_sts/mixed-anglE/",
-    "output/turkish_sts/stsb-nli-anglE/",
-    "output/turkish_sts/mixed-cossim-10ep/",
-    "output/turkish_sts/stsb-cxc-anglE-10ep/",
-    "output/turkish_sts/cxc-anglE-10ep/",
-    "output/turkish_sts/simcse_sup_initial/checkpoint-2937/",
+    Path(f"{BASE_PATH}/turkish_sts/colab_test_2/model_best.pth"),
+    Path(f"{BASE_PATH}/turkish_sts/ablation_regular_run/model_best.pth"),
+    Path(f"{BASE_PATH}/turkish_sts/ablation_no_dsl/model_best.pth"),
+    Path(f"{BASE_PATH}/turkish_sts/ablation_1M_no_dsl/model_best.pth"),
+    Path(f"{BASE_PATH}/turkish_sts/ablation_regular_sampler/model_best.pth"),
+    Path(f"{BASE_PATH}/turkish_sts/ablation_low_p_value/model_best.pth"),
+    Path(f"{BASE_PATH}/turkish_sts/ablation_uncased/model_best.pth"),
+    Path(f"{BASE_PATH}/turkish_sts/ablation_simcse/model_best.pth"),
+    Path(f"{BASE_PATH}/turkish_sts/ablation_simcse_with_dsl/model_best.pth"),
+    Path(f"{BASE_PATH}/turkish_sts/ablation_fix_sampler/model_best.pth"),
+    Path(f"{BASE_PATH}/turkish_sts/ablation_fix_sampler_two/model_best.pth"),
+    Path(f"{BASE_PATH}/turkish_sts/ablation_emrecan/model_best.pth"),
+    Path(f"{BASE_PATH}/turkish_sts/improved_100K_with_dcl_cased/model_best.pth"),
+    Path(f"{BASE_PATH}/turkish_sts/improved_100K_without_dcl_cased/model_best.pth"),
+    f"{BASE_PATH}/turkish_sts/mixed-anglE/",
+    f"{BASE_PATH}/turkish_sts/stsb-nli-anglE/",
+    f"{BASE_PATH}/turkish_sts/mixed-cossim-10ep/",
+    f"{BASE_PATH}/turkish_sts/stsb-cxc-anglE-10ep/",
+    f"{BASE_PATH}/turkish_sts/cxc-anglE-10ep/",
+    f"{BASE_PATH}/turkish_sts/simcse_sup_initial/",
+    f"{BASE_PATH}/turkish_sts/mixed-anglE-10ep-after-simcse-sup/",
     "trmteb/turkish-embedding-model-fine-tuned",
     "emrecan/bert-base-turkish-cased-mean-nli-stsb-tr",
     "ytu-ce-cosmos/turkish-e5-large",
@@ -186,11 +194,11 @@ def evaluate_mteb_tr(
 def evaluate_all_mteb_tr(
     max_model_len: int,
 ) -> None:
-    project_base: Path = Path(__file__).parent.parent
-    raw_out_folder: Path = project_base / "output/mteb_raw_out/"
+    out_base: Path = Path(BASE_PATH)
+    raw_out_folder: Path = out_base / "mteb_raw_out"
     raw_out_folder.mkdir(parents=True, exist_ok=True)
 
-    out_folder: Path = project_base / "output/mteb_out/"
+    out_folder: Path = out_base / "mteb_out"
     out_folder.mkdir(parents=True, exist_ok=True)
 
     results: Dict[str, Dict[str, float]] = dict()
@@ -251,7 +259,7 @@ def evaluate_all_and_print(
 ) -> None:
     results: Dict[str, Dict[str, float]] = dict()
 
-    cache_path: Path = Path("output/validation_cache") / f"{dataset_name}.json"
+    cache_path: Path = Path(f"{BASE_PATH}/validation_cache") / f"{dataset_name}.json"
     cache: Dict[str, Dict[str, float]] = dict()
     if cache_path.exists():
         cache = json.loads(cache_path.read_text())
@@ -265,7 +273,7 @@ def evaluate_all_and_print(
             else:
                 name = model_name
 
-            key: str = str(model_name)
+            key: str = str(name)
             if key in cache:
                 print(f"Loaded from cache: {model_name}")
                 results[name] = cache[key]
