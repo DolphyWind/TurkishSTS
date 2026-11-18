@@ -48,6 +48,9 @@ MODEL_NAMES: List[Union[str, Path]] = [
     f"{BASE_PATH}/turkish_sts/cxc-anglE-10ep/",
     f"{BASE_PATH}/turkish_sts/simcse_sup_initial/",
     f"{BASE_PATH}/turkish_sts/mixed-anglE-10ep-after-simcse-sup/",
+    f"{BASE_PATH}/turkish_sts/web_pairs/",
+    f"{BASE_PATH}/turkish_sts/simcse_sup_cached_mnrl/",
+    f"{BASE_PATH}/turkish_sts/simcse_sup_cached_mnrl_2/",
     "trmteb/turkish-embedding-model-fine-tuned",
     "emrecan/bert-base-turkish-cased-mean-nli-stsb-tr",
     "ytu-ce-cosmos/turkish-e5-large",
@@ -64,8 +67,9 @@ def shorten_name(
     if len(s) < max_len:
         return s
 
-    half: int = int((max_len - 3) // 2)
-    return s[:half] + "..." + s[-half:]
+    # half: int = int((max_len - 3) // 2)
+    # return s[:half] + "..." + s[-half:]
+    return "..." + s[-max_len+3:]
 
 
 def print_results_table(

@@ -42,7 +42,7 @@ def main():
     model_name: Union[str, Path] = ""
     model: SentenceTransformer = load_model(model_name)
 
-    split_seed: int = 1234
+    split_seed: int = 42
     train_dataset: Dataset
     eval_dataset: Dataset
     train_dataset, eval_dataset = load_datasets(split_seed)
