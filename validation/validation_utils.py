@@ -27,36 +27,12 @@ BASE_PATH: str = "/run/media/yunus/HDD_5TB/results/TurkishSentenceSimilarity/"
 #  - Custom model trained with HF trainers and therefore use HF's save method
 #  - Models from hf
 MODEL_NAMES: List[Union[str, Path]] = [
-    Path(f"{BASE_PATH}/turkish_sts/colab_test_2/model_best.pth"),
-    Path(f"{BASE_PATH}/turkish_sts/ablation_regular_run/model_best.pth"),
-    Path(f"{BASE_PATH}/turkish_sts/ablation_no_dsl/model_best.pth"),
-    Path(f"{BASE_PATH}/turkish_sts/ablation_1M_no_dsl/model_best.pth"),
-    Path(f"{BASE_PATH}/turkish_sts/ablation_regular_sampler/model_best.pth"),
-    Path(f"{BASE_PATH}/turkish_sts/ablation_low_p_value/model_best.pth"),
-    Path(f"{BASE_PATH}/turkish_sts/ablation_uncased/model_best.pth"),
-    Path(f"{BASE_PATH}/turkish_sts/ablation_simcse/model_best.pth"),
-    Path(f"{BASE_PATH}/turkish_sts/ablation_simcse_with_dsl/model_best.pth"),
-    Path(f"{BASE_PATH}/turkish_sts/ablation_fix_sampler/model_best.pth"),
-    Path(f"{BASE_PATH}/turkish_sts/ablation_fix_sampler_two/model_best.pth"),
-    Path(f"{BASE_PATH}/turkish_sts/ablation_emrecan/model_best.pth"),
-    Path(f"{BASE_PATH}/turkish_sts/improved_100K_with_dcl_cased/model_best.pth"),
-    Path(f"{BASE_PATH}/turkish_sts/improved_100K_without_dcl_cased/model_best.pth"),
-    f"{BASE_PATH}/turkish_sts/mixed-anglE/",
-    f"{BASE_PATH}/turkish_sts/stsb-nli-anglE/",
-    f"{BASE_PATH}/turkish_sts/mixed-cossim-10ep/",
-    f"{BASE_PATH}/turkish_sts/stsb-cxc-anglE-10ep/",
-    f"{BASE_PATH}/turkish_sts/cxc-anglE-10ep/",
-    f"{BASE_PATH}/turkish_sts/simcse_sup_initial/",
-    f"{BASE_PATH}/turkish_sts/mixed-anglE-10ep-after-simcse-sup/",
-    f"{BASE_PATH}/turkish_sts/web_pairs/",
-    f"{BASE_PATH}/turkish_sts/simcse_sup_cached_mnrl/",
-    f"{BASE_PATH}/turkish_sts/simcse_sup_cached_mnrl_2/",
+    f"DolphyWind/bert-base-turkish-cased-simcsepp-unsup-plus-sup",
+    f"{BASE_PATH}turkish_sts/simcse_sup_cached_mnrl_2",
     "trmteb/turkish-embedding-model-fine-tuned",
     "emrecan/bert-base-turkish-cased-mean-nli-stsb-tr",
     "ytu-ce-cosmos/turkish-e5-large",
     "ytu-ce-cosmos/modernbert-tr-embed",
-    "dbmdz/bert-base-turkish-cased",
-    "dbmdz/bert-base-turkish-uncased",
 ]
 
 

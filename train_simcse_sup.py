@@ -47,7 +47,7 @@ def main():
     eval_dataset: Dataset
     train_dataset, eval_dataset = load_datasets(split_seed)
 
-    train_loss = losses.MultipleNegativesRankingLoss(model=model)
+    train_loss = losses.CachedMultipleNegativesRankingLoss(model=model)
 
     num_epochs: int = 20
     run_name: str = "simcse_sup"

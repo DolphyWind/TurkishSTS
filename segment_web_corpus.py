@@ -105,7 +105,7 @@ def parse_args() -> argparse.Namespace:
             "segment-any-text/sat-3l-sm",
             "segment-any-text/sat-1l-sm",
         ],
-        default="sat-12l-sm",
+        default="segment-any-text/sat-12l-sm",
     )
     parser.add_argument(
         "--chunk_size",
