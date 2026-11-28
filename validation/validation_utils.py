@@ -27,8 +27,7 @@ BASE_PATH: str = "/run/media/yunus/HDD_5TB/results/TurkishSentenceSimilarity/"
 #  - Custom model trained with HF trainers and therefore use HF's save method
 #  - Models from hf
 MODEL_NAMES: List[Union[str, Path]] = [
-    f"DolphyWind/bert-base-turkish-cased-simcsepp-unsup-plus-sup",
-    f"{BASE_PATH}turkish_sts/simcse_sup_cached_mnrl_2",
+    "DolphyWind/bert-base-turkish-cased-simcse",
     "trmteb/turkish-embedding-model-fine-tuned",
     "emrecan/bert-base-turkish-cased-mean-nli-stsb-tr",
     "ytu-ce-cosmos/turkish-e5-large",
