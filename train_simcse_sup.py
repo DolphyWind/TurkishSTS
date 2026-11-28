@@ -47,7 +47,10 @@ def main():
     eval_dataset: Dataset
     train_dataset, eval_dataset = load_datasets(split_seed)
 
-    train_loss = losses.CachedMultipleNegativesRankingLoss(model=model)
+    train_loss = losses.CachedMultipleNegativesRankingLoss(
+        model=model,
+        mini_batch_size=256,
+    )
 
     num_epochs: int = 20
     run_name: str = "simcse_sup"
@@ -55,7 +58,7 @@ def main():
     args = SentenceTransformerTrainingArguments(
         output_dir=f"output/{experiment_name}/{run_name}",
         run_name=run_name,
-        per_device_train_batch_size=256,
+        per_device_train_batch_size=1024,
         per_device_eval_batch_size=256,
         num_train_epochs=num_epochs,
         learning_rate=5e-5,
